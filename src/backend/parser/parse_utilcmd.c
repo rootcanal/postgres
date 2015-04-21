@@ -277,6 +277,10 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 				/* process later */
 				break;
 
+			case T_ColumnStoreClause:
+				stmt->colstores = lappend(stmt->colstores, element);
+				break;
+
 			default:
 				elog(ERROR, "unrecognized node type: %d",
 					 (int) nodeTag(element));
