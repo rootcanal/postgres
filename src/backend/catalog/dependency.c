@@ -16,6 +16,7 @@
 
 #include "access/htup_details.h"
 #include "access/xact.h"
+#include "catalog/colstore.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/index.h"
@@ -145,6 +146,7 @@ static const Oid object_classes[] = {
 	AccessMethodProcedureRelationId,	/* OCLASS_AMPROC */
 	RewriteRelationId,			/* OCLASS_REWRITE */
 	TriggerRelationId,			/* OCLASS_TRIGGER */
+	CStoreRelationId,			/* OCLASS_COLSTORE */
 	NamespaceRelationId,		/* OCLASS_SCHEMA */
 	TSParserRelationId,			/* OCLASS_TSPARSER */
 	TSDictionaryRelationId,		/* OCLASS_TSDICT */
@@ -1213,6 +1215,10 @@ doDeletion(const ObjectAddress *object, int flags)
 
 		case OCLASS_TRIGGER:
 			RemoveTriggerById(object->objectId);
+			break;
+
+		case OCLASS_COLSTORE:
+			RemoveColstoreById(object->objectId);
 			break;
 
 		case OCLASS_SCHEMA:
@@ -2412,6 +2418,9 @@ getObjectClass(const ObjectAddress *object)
 
 		case PolicyRelationId:
 			return OCLASS_POLICY;
+
+		case CStoreRelationId:
+			return OCLASS_COLSTORE;
 
 		case TransformRelationId:
 			return OCLASS_TRANSFORM;
