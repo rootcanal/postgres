@@ -383,6 +383,7 @@ typedef struct PlannerInfo
  *		pages - number of disk pages in relation (zero if not a table)
  *		tuples - number of tuples in relation (not considering restrictions)
  *		allvisfrac - fraction of disk pages that are marked all-visible
+ *		cstore - pointer to ColumnStoreOptInfo (NULL if not a column store)
  *		subplan - plan for subquery (NULL if it's not a subquery)
  *		subroot - PlannerInfo for subquery (NULL if it's not a subquery)
  *		subplan_params - list of PlannerParamItems to be passed to subquery
@@ -484,9 +485,11 @@ typedef struct RelOptInfo
 	List	   *lateral_vars;	/* LATERAL Vars and PHVs referenced by rel */
 	Relids		lateral_referencers;	/* rels that reference me laterally */
 	List	   *indexlist;		/* list of IndexOptInfo */
+	List	   *cstlist;		/* list of ColumnStoreOptInfo (if relation) */
 	BlockNumber pages;			/* size estimates derived from pg_class */
 	double		tuples;
 	double		allvisfrac;
+	struct ColumnStoreOptInfo *cstore;	/* if column store */
 	/* use "struct Plan" to avoid including plannodes.h here */
 	struct Plan *subplan;		/* if subquery */
 	PlannerInfo *subroot;		/* if subquery */
@@ -581,6 +584,35 @@ typedef struct IndexOptInfo
 	void		(*amcostestimate) ();	/* AM's cost estimator */
 } IndexOptInfo;
 
+/*
+ * ColumnStoreOptInfo
+ *		Per-colstore information for planning/optimization
+ *
+ *		cstkeys[] has ncolumns entries, we don't allow expression in colstores
+ *
+ * TODO maybe should have a bunch of capability flags like IndexOptInfo
+ */
+typedef struct ColumnStoreOptInfo
+{
+	NodeTag		type;
+
+	Oid			colstoreoid;	/* OID of the column store relation */
+	Oid			reltablespace;	/* tablespace of colstore (not table) */
+	RelOptInfo *rel;			/* back-link to colstore's table */
+
+	/* colstore-size statistics (from pg_class and elsewhere) */
+	BlockNumber pages;			/* number of disk pages in colstore */
+	double		tuples;			/* number of index tuples in colstore */
+
+	/* colstore descriptor information (from pg_cstore) */
+	int			ncolumns;		/* number of columns in index */
+	int		   *cstkeys;		/* column numbers of colstore's keys */
+	Oid			cstam;			/* OID of the access method (in pg_cstore_am) */
+
+	RegProcedure cstcostestimate;	/* OID of the colstore method's cost fcn */
+
+	List	   *csttlist;		/* targetlist representing colstore's columns */
+} ColumnStoreOptInfo;
 
 /*
  * EquivalenceClasses

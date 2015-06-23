@@ -1923,6 +1923,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_NODE_FIELD(lateral_vars);
 	WRITE_BITMAPSET_FIELD(lateral_referencers);
 	WRITE_NODE_FIELD(indexlist);
+	WRITE_NODE_FIELD(cstlist);
 	WRITE_UINT_FIELD(pages);
 	WRITE_FLOAT_FIELD(tuples, "%.0f");
 	WRITE_FLOAT_FIELD(allvisfrac, "%.6f");
@@ -1958,6 +1959,23 @@ _outIndexOptInfo(StringInfo str, const IndexOptInfo *node)
 	WRITE_BOOL_FIELD(immediate);
 	WRITE_BOOL_FIELD(hypothetical);
 	/* we don't bother with fields copied from the index AM's API struct */
+}
+
+static void
+_outColumnStoreOptInfo(StringInfo str, const ColumnStoreOptInfo *node)
+{
+	WRITE_NODE_TYPE("COLUMNSTOREOPTINFO");
+
+	/* NB: this isn't a complete set of fields */
+	WRITE_OID_FIELD(colstoreoid);
+
+	/* Do NOT print rel field, else infinite recursion */
+	WRITE_UINT_FIELD(pages);
+	WRITE_FLOAT_FIELD(tuples, "%.0f");
+	WRITE_INT_FIELD(ncolumns);
+	/* array fields aren't really worth the trouble to print */
+	WRITE_OID_FIELD(cstam);
+	/* we don't bother with fields copied from the pg_am entry */
 }
 
 static void
@@ -3415,6 +3433,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_PlannerParamItem:
 				_outPlannerParamItem(str, obj);
+				break;
+			case T_ColumnStoreOptInfo:
+				_outColumnStoreOptInfo(str, obj);
 				break;
 
 			case T_ExtensibleNode:
