@@ -638,6 +638,14 @@ _outCustomScan(StringInfo str, const CustomScan *node)
 }
 
 static void
+_outColumnStoreScan(StringInfo str, const ColumnStoreScan *node)
+{
+	WRITE_NODE_TYPE("COLUMNSTORESCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+}
+
+static void
 _outJoin(StringInfo str, const Join *node)
 {
 	WRITE_NODE_TYPE("JOIN");
@@ -1721,6 +1729,15 @@ _outCustomPath(StringInfo str, const CustomPath *node)
 	WRITE_NODE_FIELD(custom_private);
 	appendStringInfoString(str, " :methods ");
 	_outToken(str, node->methods->CustomName);
+}
+
+static void
+_outColumnStoreScanPath(StringInfo str, const ColumnStoreScanPath *node)
+{
+	WRITE_NODE_TYPE("COLUMNSTORESCANPATH");
+
+	_outPathInfo(str, (const Path *) node);
+	WRITE_NODE_FIELD(colstore);
 }
 
 static void
@@ -3143,6 +3160,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_CustomScan:
 				_outCustomScan(str, obj);
 				break;
+			case T_ColumnStoreScan:
+				_outColumnStoreScan(str, obj);
+				break;
 			case T_Join:
 				_outJoin(str, obj);
 				break;
@@ -3361,6 +3381,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_CustomPath:
 				_outCustomPath(str, obj);
+				break;
+			case T_ColumnStoreScanPath:
+				_outColumnStoreScanPath(str, obj);
 				break;
 			case T_AppendPath:
 				_outAppendPath(str, obj);

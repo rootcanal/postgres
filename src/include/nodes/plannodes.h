@@ -578,6 +578,14 @@ typedef struct CustomScan
 	const CustomScanMethods *methods;
 } CustomScan;
 
+/* ----------------
+ *		column store scan node
+ * ----------------
+ */
+typedef struct ColumnStoreScan
+{
+	Scan		scan;
+} ColumnStoreScan;
 /*
  * ==========
  * Join nodes

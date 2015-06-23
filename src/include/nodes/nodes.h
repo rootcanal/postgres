@@ -84,6 +84,7 @@ typedef enum NodeTag
 	T_NestLoopParam,
 	T_PlanRowMark,
 	T_PlanInvalItem,
+	T_ColumnStoreScan,
 
 	/*
 	 * TAGS FOR PLAN STATE NODES (execnodes.h)
@@ -113,6 +114,7 @@ typedef enum NodeTag
 	T_WorkTableScanState,
 	T_ForeignScanState,
 	T_CustomScanState,
+	T_ColumnStoreScanState,
 	T_JoinState,
 	T_NestLoopState,
 	T_MergeJoinState,
@@ -236,6 +238,7 @@ typedef enum NodeTag
 	T_TidPath,
 	T_ForeignPath,
 	T_CustomPath,
+	T_ColumnStoreScanPath,
 	T_AppendPath,
 	T_MergeAppendPath,
 	T_ResultPath,

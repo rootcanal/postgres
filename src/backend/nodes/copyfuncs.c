@@ -693,6 +693,19 @@ _copyCustomScan(const CustomScan *from)
 }
 
 /*
+ * _copyColumnStoreScan
+ */
+static ColumnStoreScan *
+_copyColumnStoreScan(const ColumnStoreScan *from)
+{
+	ColumnStoreScan   *newnode = makeNode(ColumnStoreScan);
+
+	CopyPlanFields((const Plan *) from, (Plan *) newnode);
+
+	return newnode;
+}
+
+/*
  * CopyJoinFields
  *
  *		This function copies the fields of the Join node.  It is used by
@@ -814,7 +827,6 @@ _copyMaterial(const Material *from)
 
 	return newnode;
 }
-
 
 /*
  * _copySort
@@ -4358,6 +4370,9 @@ copyObject(const void *from)
 			break;
 		case T_Material:
 			retval = _copyMaterial(from);
+			break;
+		case T_ColumnStoreScan:
+			retval = _copyColumnStoreScan(from);
 			break;
 		case T_Sort:
 			retval = _copySort(from);

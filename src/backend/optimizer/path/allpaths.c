@@ -2821,6 +2821,9 @@ print_path(PlannerInfo *root, Path *path, int indent)
 				case T_WorkTableScan:
 					ptype = "WorkTableScan";
 					break;
+				case T_ColumnStoreScan:
+					ptype = "ColumnStoreScan";
+					break;
 				default:
 					ptype = "???Path";
 					break;

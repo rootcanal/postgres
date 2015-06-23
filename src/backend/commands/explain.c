@@ -910,6 +910,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			else
 				pname = sname;
 			break;
+		case T_ColumnStoreScan:
+			pname = sname = "Column Store Scan";
+			break;
 		case T_Material:
 			pname = sname = "Materialize";
 			break;
@@ -1042,6 +1045,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_ValuesScan:
 		case T_CteScan:
 		case T_WorkTableScan:
+		case T_ColumnStoreScan:
 			ExplainScanTarget((Scan *) plan, es);
 			break;
 		case T_ForeignScan:
@@ -1303,6 +1307,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_CteScan:
 		case T_WorkTableScan:
 		case T_SubqueryScan:
+		case T_ColumnStoreScan:
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,

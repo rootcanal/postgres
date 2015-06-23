@@ -1005,6 +1005,15 @@ typedef struct CustomPath
 } CustomPath;
 
 /*
+ * ColumnStoreScanPath represents scan of column store.
+ */
+typedef struct ColumnStoreScanPath
+{
+	Path		path;		/* this path node */
+	ColumnStoreOptInfo *colstore;	/* column store info */
+} ColumnStoreScanPath;
+
+/*
  * AppendPath represents an Append plan, ie, successive execution of
  * several member plans.
  *

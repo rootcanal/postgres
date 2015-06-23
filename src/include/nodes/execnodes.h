@@ -1670,6 +1670,18 @@ typedef struct CustomScanState
 	const CustomExecMethods *methods;
 } CustomScanState;
 
+/* ----------------
+ *	 ColumnStoreScanState information
+ * ----------------
+ */
+typedef struct ColumnStoreScanState
+{
+	ScanState	ss;				/* its first field is NodeTag */
+	int			eflags;			/* capability flags */
+
+	struct ColumnStoreHandler *csthandler;
+} ColumnStoreScanState;
+
 /* ----------------------------------------------------------------
  *				 Join State Information
  * ----------------------------------------------------------------
