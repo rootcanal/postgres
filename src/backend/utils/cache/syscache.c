@@ -33,6 +33,8 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_conversion.h"
+#include "catalog/pg_cstore.h"
+#include "catalog/pg_cstore_am.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
 #include "catalog/pg_default_acl.h"
@@ -347,6 +349,39 @@ static const struct cachedesc cacheinfo[] = {
 			0
 		},
 		8
+	},
+	{CStoreAmRelationId,		/* CSTOREAMNAME */
+		CStoreAmNameIndexId,
+		1,
+		{
+			Anum_pg_cstore_am_cstamname,
+			0,
+			0,
+			0
+		},
+		8
+	},
+	{CStoreAmRelationId,		/* CSTOREAMOID */
+		CStoreAmOidIndexId,
+		1,
+		{
+			ObjectIdAttributeNumber,
+			0,
+			0,
+			0
+		},
+		8
+	},
+	{CStoreRelationId,			/* CSTOREOID */
+		CStoreOidIndexId,
+		1,
+		{
+			ObjectIdAttributeNumber,
+			0,
+			0,
+			0
+		},
+		16
 	},
 	{DatabaseRelationId,		/* DATABASEOID */
 		DatabaseOidIndexId,
