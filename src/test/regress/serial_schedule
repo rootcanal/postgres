@@ -62,6 +62,11 @@ test: create_misc
 test: create_operator
 test: create_index
 test: create_view
+test: cstore
+test: colstore_behave_control
+test: colstore_behave_test1
+test: colstore_behave_test2
+test: colstore_behave_test3
 test: create_aggregate
 test: create_function_3
 test: create_cast
@@ -75,6 +80,7 @@ test: drop_if_exists
 test: updatable_views
 test: rolenames
 test: roleattributes
+test: cstore
 test: sanity_check
 test: errors
 test: select

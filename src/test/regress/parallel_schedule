@@ -62,6 +62,12 @@ test: create_index create_view
 # ----------
 test: create_aggregate create_function_3 create_cast constraints triggers inherit create_table_like typed_table vacuum drop_if_exists updatable_views rolenames roleattributes
 
+test: cstore
+test: colstore_behave_control
+test: colstore_behave_test1
+test: colstore_behave_test2
+test: colstore_behave_test3
+
 # ----------
 # sanity_check does a vacuum, affecting the sort order of SELECT *
 # results. So it should not run parallel to other tests.

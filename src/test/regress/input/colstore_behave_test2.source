@@ -1,0 +1,14 @@
+CREATE TABLE colstore_behave_test
+(col1	bigint
+,col2	text
+,col3	bigint
+,col4	integer
+,col5	smallint
+,col6	text COLUMN STORE col6 USING test
+,col7	char(10) not null COLUMN STORE col7 USING test
+,col8	text COLUMN STORE col8 USING test
+);
+
+\i @abs_srcdir@/sql/colstore_behave.sql
+
+DROP TABLE colstore_behave_test;
