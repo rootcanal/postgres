@@ -1525,6 +1525,10 @@ describeOneTableDetails(const char *schemaname,
 			printfPQExpBuffer(&title, _("Composite type \"%s.%s\""),
 							  schemaname, relationname);
 			break;
+		case 'C':
+			printfPQExpBuffer(&title, _("Column store \"%s.%s\""),
+							  schemaname, relationname);
+			break;
 		case 'f':
 			printfPQExpBuffer(&title, _("Foreign table \"%s.%s\""),
 							  schemaname, relationname);
@@ -2534,6 +2538,30 @@ describeOneTableDetails(const char *schemaname,
 		/* Tablespace info */
 		add_tablespace_footer(&cont, tableinfo.relkind, tableinfo.tablespace,
 							  true);
+
+		if (pset.sversion >= 90600)
+		{
+			printfPQExpBuffer(&buf, "SELECT cstamname, cstname, (SELECT string_agg(attname,', ') FROM pg_attribute WHERE attrelid = cstrelid AND attnum = ANY(cstatts)) FROM pg_cstore AS cst, pg_class AS cl, pg_cstore_am AS am WHERE cl.oid = cst.cststoreid AND cl.relam = am.oid AND cstrelid = '%s'::regclass ORDER BY cstatts[0];", oid);
+			result = PSQLexec(buf.data);
+			if (!result)
+				goto error_return;
+			else
+				tuples = PQntuples(result);
+
+			if (tuples > 0)
+			{
+				printTableAddFooter(&cont, _("Column stores:"));
+				for (i = 0; i < tuples; i++)
+				{
+					printfPQExpBuffer(&buf, "    \"%s\" USING %s (%s)",
+									  PQgetvalue(result, i, 1),
+									  PQgetvalue(result, i, 0),
+									  PQgetvalue(result, i, 2));
+					printTableAddFooter(&cont, buf.data);
+				}
+			}
+			PQclear(result);
+		}
 	}
 
 	/* reloptions, if verbose */
