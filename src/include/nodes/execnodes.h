@@ -77,6 +77,30 @@ typedef struct IndexInfo
 } IndexInfo;
 
 /* ----------------
+ *	  ColumnStoreHandler
+ *
+ *		This struct holds the information needed to operate a column store
+ *
+ *		relationDesc		the column store relation
+ *		lockmode			the lock mode to hold on the relation
+ *		opaque				opaque pointer used by the access method
+ *		ColumnStoreRoutine	ColumnStore callback functions
+ *		NumColumnStoreAttrs	number of columns in this column store
+ *		KeyAttrNumbers		underlying-rel attribute numbers used as keys
+ * ----------------
+ */
+typedef struct ColumnStoreHandler
+{
+	NodeTag		type;
+	Relation	csh_relationDesc;
+	LOCKMODE	csh_lockmode;
+	void	   *csh_opaque;
+	struct ColumnStoreRoutine *csh_ColumnStoreRoutine;
+	int			csh_NumColumnStoreAttrs;
+	AttrNumber	csh_KeyAttrNumbers[INDEX_MAX_KEYS];
+} ColumnStoreHandler;
+
+/* ----------------
  *	  ExprContext_CB
  *
  *		List of callbacks to be called at ExprContext shutdown.

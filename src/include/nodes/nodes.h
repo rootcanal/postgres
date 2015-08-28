@@ -37,6 +37,7 @@ typedef enum NodeTag
 	T_ResultRelInfo,
 	T_EState,
 	T_TupleTableSlot,
+	T_ColumnStoreHandler,
 
 	/*
 	 * TAGS FOR PLAN NODES (plannodes.h)
@@ -462,7 +463,8 @@ typedef enum NodeTag
 	T_InlineCodeBlock,			/* in nodes/parsenodes.h */
 	T_FdwRoutine,				/* in foreign/fdwapi.h */
 	T_IndexAmRoutine,			/* in access/amapi.h */
-	T_TsmRoutine				/* in access/tsmapi.h */
+	T_TsmRoutine,				/* in access/tsmapi.h */
+	T_ColumnStoreRoutine		/* in colstore/colstoreapi.h */
 } NodeTag;
 
 /*

@@ -2123,6 +2123,8 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 		MemoryContextDelete(relation->rd_rsdesc->rscxt);
 	if (relation->rd_fdwroutine)
 		pfree(relation->rd_fdwroutine);
+	if (relation->rd_colstoreroutine)
+		pfree(relation->rd_colstoreroutine);
 	pfree(relation);
 }
 
@@ -5074,6 +5076,7 @@ load_relcache_init_file(bool shared)
 		rel->rd_exclprocs = NULL;
 		rel->rd_exclstrats = NULL;
 		rel->rd_fdwroutine = NULL;
+		rel->rd_colstoreroutine = NULL;
 
 		/*
 		 * Reset transient-state fields in the relcache entry

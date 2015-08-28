@@ -1,6 +1,7 @@
 #ifndef COLSTORE_H
 #define COLSTORE_H
 
+#include "nodes/execnodes.h"
 #include "nodes/nodes.h"
 #include "nodes/parsenodes.h"
 #include "nodes/pg_list.h"
