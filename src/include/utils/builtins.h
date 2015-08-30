@@ -1276,6 +1276,9 @@ extern Datum pg_identify_object_as_address(PG_FUNCTION_ARGS);
 /* catalog/objectaddress.c */
 extern Datum pg_get_object_address(PG_FUNCTION_ARGS);
 
+/* colstore/ */
+extern Datum vertical_cstore_handler(PG_FUNCTION_ARGS);
+
 /* commands/constraint.c */
 extern Datum unique_key_recheck(PG_FUNCTION_ARGS);
 

@@ -3696,6 +3696,11 @@ DESCR("BERNOULLI tablesample method handler");
 DATA(insert OID = 3314 (  system			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3310 "2281" _null_ _null_ _null_ _null_ _null_ tsm_system_handler _null_ _null_ _null_ ));
 DESCR("SYSTEM tablesample method handler");
 
+/* column stores */
+/* XXX parallel safe? */
+DATA(insert OID = 4337 (  vertical_cstore_handler PGNSP PGUID 12 1 0 0 0 f f f f t f i s 0 0 3351 "" _null_ _null_ _null_ _null_ _null_ vertical_cstore_handler _null_ _null_ _null_ ));
+DESCR("vertical-partitioning column store handler");
+
 /* cryptographic */
 DATA(insert OID =  2311 (  md5	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "25" _null_ _null_ _null_ _null_ _null_ md5_text _null_ _null_ _null_ ));
 DESCR("MD5 hash");
