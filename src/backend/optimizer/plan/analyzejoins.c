@@ -22,6 +22,8 @@
  */
 #include "postgres.h"
 
+#include "access/sysattr.h"
+#include "catalog/pg_class.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/joininfo.h"
@@ -32,12 +34,36 @@
 #include "utils/lsyscache.h"
 
 /* local functions */
+static bool colstore_join_is_removable(PlannerInfo *root, RelOptInfo *csrel,
+									   Relids *joinrelids);
+static inline bool colstore_attrs_used(PlannerInfo *root, Relids joinrelids,
+									   RelOptInfo *rel);
 static bool join_is_removable(PlannerInfo *root, SpecialJoinInfo *sjinfo);
 static void remove_rel_from_query(PlannerInfo *root, int relid,
 					  Relids joinrelids);
 static List *remove_rel_from_joinlist(List *joinlist, int relid, int *nremoved);
 static Oid	distinct_col_search(int colno, List *colnos, List *opids);
 
+/*
+ * Find the RTI of the relation that owns colstore with given RTI.
+ *
+ * XXX this should probably be elsewhere.
+ */
+static Index
+find_colstore_parentrelid(PlannerInfo *root, int colstoreid)
+{
+	ListCell *lc;
+
+	foreach(lc, root->colstore_rel_list)
+	{
+		ColstoreRelInfo *info = (ColstoreRelInfo *) lfirst(lc);
+
+		if (info->child_relid == colstoreid)
+			return info->parent_relid;
+	}
+
+	return 0; /* unable to find */
+}
 
 /*
  * remove_useless_joins
@@ -53,10 +79,37 @@ remove_useless_joins(PlannerInfo *root, List *joinlist)
 	ListCell   *lc;
 
 	/*
-	 * We are only interested in relations that are left-joined to, so we can
-	 * scan the join_info_list to find them easily.
+	 * Because we may have added excessive column stores to the join list due
+	 * to join processing, we remove now those that are found to be
+	 * unnecessary.
 	 */
 restart:
+	foreach(lc, joinlist)
+	{
+		RangeTblRef *rtr = (RangeTblRef *) lfirst(lc);
+		RangeTblEntry *rte = root->simple_rte_array[rtr->rtindex];
+
+		if (rte->relkind == RELKIND_COLUMN_STORE)
+		{
+			RelOptInfo *csrel = find_base_rel(root, rtr->rtindex);
+			Relids joinrelids;
+
+			if (colstore_join_is_removable(root, csrel, &joinrelids))
+			{
+				int nremoved = 0;
+
+				remove_rel_from_query(root, csrel->relid, joinrelids);
+
+				joinlist = remove_rel_from_joinlist(joinlist, rtr->rtindex, &nremoved);
+				if (nremoved != 1)
+					elog(ERROR, "failed to find relation %d in joinlist", rtr->rtindex);
+
+				goto restart;
+			}
+		}
+	}
+
+	/* scan the join_info_list to check for LEFT JOINs which can be removed. */
 	foreach(lc, root->join_info_list)
 	{
 		SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) lfirst(lc);
@@ -102,6 +155,193 @@ restart:
 	}
 
 	return joinlist;
+}
+
+/*
+ * colstore_join_is_removable
+ *		Determines if a join to a column store may safely be removed without
+ *		affecting the results of the query.
+ *
+ * The requirements for successful join removal here are:
+ * 1.	No attribute of the column store is used in the query apart from on the
+ *		join condition to the column store's parent relation.
+ * 2.	The join condition to the column store heap must be on only the heap's
+ *		ctid joining to the column store's heaptid column.
+ *
+ * If any other quals exist which restrict rows coming from the column store
+ * in any way, then we cannot be certain of matching exactly 1 row in the
+ * column store, therefore we cannot remove the join.
+ *
+ * Returns true if the join can safely be removed. joinrelids is set to
+ * the heap's relid and the column stores relid.
+ */
+static bool
+colstore_join_is_removable(PlannerInfo *root, RelOptInfo *csrel,
+						   Relids *joinrelids)
+{
+	Index			colstoreparent;
+	ListCell	   *l;
+
+	/* If the column store has any restriction quals then we can't remove */
+	if (csrel->baserestrictinfo != NIL)
+		return false;
+
+	/*
+	 * We require that the only join qual be the ctid = heaptid qual. This
+	 * will be an eclass join, but there may be joininfo items which represent
+	 * the same condition. Here we'll make a pass over the joininfo list to
+	 * ensire that any quals that are in there will also be found by the eclass
+	 * scanning code below.
+	 */
+	if (csrel->joininfo != NIL)
+	{
+		foreach(l, csrel->joininfo)
+		{
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
+
+			/* XXX I'm really not sure that this is correct at all. */
+			if (!rinfo->left_ec || !rinfo->right_ec)
+				return false;
+		}
+	}
+
+	colstoreparent = find_colstore_parentrelid(root, csrel->relid);
+
+	/*
+	 * If the colstore's heap is not present in the query then we can't
+	 * remove the join
+	 */
+	if (colstoreparent == 0)
+		return false;
+
+	*joinrelids = bms_copy(csrel->relids);
+	*joinrelids = bms_add_member(*joinrelids, colstoreparent);
+
+	/*
+	 * If any attributes are required below the join, with the expection of
+	 * heaptid, then we can't remove the join. heaptid cannot be manually
+	 * referenced in the query to perform any other filtering as this column
+	 * does not exist logically in the heap table, therefore an error would
+	 * have been generated at the parser if it had.
+	 */
+	if (colstore_attrs_used(root, *joinrelids, csrel))
+		return false;
+
+	/*
+	 * Now look over each EquivalenceClass. Here we're looking to ensure that
+	 * the only join condition is heap.ctid = colstore.heaptid. If we discover
+	 * any other Vars which belong to the colstore which are not the heaptid
+	 * column, then we must abort the join removal.
+	 */
+	foreach(l, root->eq_classes)
+	{
+		EquivalenceClass *ec = (EquivalenceClass *) lfirst(l);
+		ListCell *l2;
+		bool gotheapctid = false;
+		bool gotcolstoreheaptid = false;
+
+		if (ec->ec_broken || ec->ec_merged)
+			continue;
+
+		/* Skip eclasses which have no members for the csrel */
+		if (!bms_is_subset(*joinrelids, ec->ec_relids))
+			continue;
+
+		foreach(l2, ec->ec_members)
+		{
+			EquivalenceMember *em = (EquivalenceMember *) lfirst(l2);
+			Var *var = (Var *) em->em_expr;
+
+			if (!IsA(var, Var))
+				continue;
+
+			if (var->varno == colstoreparent)
+			{
+				if (var->varattno == SelfItemPointerAttributeNumber)
+					gotheapctid = true;
+			}
+			else if (var->varno == csrel->relid)
+			{
+				if (var->varattno == 1) /* XXX magic number */
+					gotcolstoreheaptid = true;
+				else
+					return false;
+			}
+		}
+
+		/*
+		 * If we didn't find either of these then we must abort the join
+		 * removal as it means that the colstore has equivalance with something
+		 * else apart from the heap ctid
+		 */
+		if (!gotheapctid || !gotcolstoreheaptid)
+			return false;
+	}
+
+	return true;
+}
+
+/*
+ * colstore_attrs_used
+ *		True if any of the Vars from this relation are required in the query
+ */
+static inline bool
+colstore_attrs_used(PlannerInfo *root, Relids joinrelids, RelOptInfo *rel)
+{
+	int		  attroff;
+	ListCell *l;
+	AttrNumber heaptidoff = 1 - rel->min_attr;
+
+	/*
+	 * rel is referenced if any of it's attributes are used above the join.
+	 *
+	 * Note that this test only detects use of rel's attributes in higher
+	 * join conditions and the target list.  There might be such attributes in
+	 * pushed-down conditions at this join, too.
+	 *
+	 * As a micro-optimization, it seems better to start with max_attr and
+	 * count down rather than starting with min_attr and counting up, on the
+	 * theory that the system attributes are somewhat less likely to be wanted
+	 * and should be tested last.
+	 */
+	for (attroff = rel->max_attr - rel->min_attr;
+		 attroff >= 0;
+		 attroff--)
+	{
+		if (attroff == heaptidoff)
+			continue;
+
+		if (!bms_is_subset(rel->attr_needed[attroff], joinrelids))
+			return true;
+	}
+
+	/*
+	 * Similarly check that rel isn't needed by any PlaceHolderVars that will
+	 * be used above the join.  We only need to fail if such a PHV actually
+	 * references some of rel's attributes; but the correct check for that is
+	 * relatively expensive, so we first check against ph_eval_at, which must
+	 * mention rel if the PHV uses any of-rel's attrs as non-lateral
+	 * references.  Note that if the PHV's syntactic scope is just rel, we
+	 * can't return true even if the PHV is variable-free.
+	 */
+	foreach(l, root->placeholder_list)
+	{
+		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(l);
+
+		if (bms_is_subset(phinfo->ph_needed, joinrelids))
+			continue;			/* PHV is not used above the join */
+		if (bms_overlap(phinfo->ph_lateral, rel->relids))
+			return true;		/* it references rel laterally */
+		if (!bms_overlap(phinfo->ph_eval_at, rel->relids))
+			continue;			/* it definitely doesn't reference rel */
+		if (bms_is_subset(phinfo->ph_eval_at, rel->relids))
+			return true;		/* there isn't any other place to eval PHV */
+		if (bms_overlap(pull_varnos((Node *) phinfo->ph_var->phexpr),
+						rel->relids))
+			return true;		/* it does reference rel */
+	}
+
+	return false; /* it does not reference rel */
 }
 
 /*
