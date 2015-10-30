@@ -102,10 +102,6 @@ IsTidEqualClause(OpExpr *node, int varno)
 	if (exprType(other) != TIDOID)
 		return false;			/* probably can't happen */
 
-	/* The other argument must be a pseudoconstant */
-	if (!is_pseudo_constant_clause(other))
-		return false;
-
 	return true;				/* success */
 }
 
@@ -264,4 +260,44 @@ create_tidscan_paths(PlannerInfo *root, RelOptInfo *rel)
 	if (tidquals)
 		add_path(rel, (Path *) create_tidscan_path(root, rel, tidquals,
 												   required_outer));
+
+	/*
+	 * If this table has column stores, scan them to add additional paths for
+	 * TidScans parameterized by the column store scans.
+	 */
+	if (rel->cstlist != NIL)
+	{
+		ListCell   *l;
+
+		foreach(l, root->colstore_rel_list)
+		{
+			ColstoreRelInfo	   *cst = lfirst(l);
+			RelOptInfo		   *colstore;
+			List			   *joinquals;
+			Relids				joinrels;
+
+			/* colstore_rel_info contains all column stores; ignore others */
+			if (cst->parent_relid != rel->relid)
+				continue;
+
+			/* ignore colstores removed from join tree */
+			colstore = root->simple_rel_array[cst->child_relid];
+			if (colstore->reloptkind != RELOPT_BASEREL)
+				continue;
+
+			joinrels = bms_union(colstore->relids, rel->relids);
+			joinquals = generate_join_implied_equalities(root, joinrels,
+														 colstore->relids, rel);
+
+			tidquals = TidQualFromRestrictinfo(joinquals, rel->relid);
+			if (tidquals)
+			{
+				required_outer = bms_add_member(NULL, cst->child_relid);
+				add_path(rel,
+						 (Path *) create_tidscan_path(root, rel, tidquals,
+													  required_outer));
+			}
+		}
+
+	}
 }
