@@ -169,6 +169,7 @@ DATA(insert (	405		bool_ops			PGNSP PGUID 2222   16 t 0 ));
 DATA(insert (	405		bytea_ops			PGNSP PGUID 2223   17 t 0 ));
 DATA(insert (	405		int2vector_ops		PGNSP PGUID 2224   22 t 0 ));
 DATA(insert (	403		tid_ops				PGNSP PGUID 2789   27 t 0 ));
+DATA(insert (	405		tid_ops				PGNSP PGUID 3361   27 t 0 ));
 DATA(insert (	405		xid_ops				PGNSP PGUID 2225   28 t 0 ));
 DATA(insert (	405		cid_ops				PGNSP PGUID 2226   29 t 0 ));
 DATA(insert (	405		abstime_ops			PGNSP PGUID 2227  702 t 0 ));

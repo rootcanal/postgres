@@ -557,6 +557,8 @@ DATA(insert (	1985   829 829 1 s 1220 405 0 ));
 DATA(insert (	1987   19 19 1 s	93	405 0 ));
 /* oid_ops */
 DATA(insert (	1990   26 26 1 s	607 405 0 ));
+/* tid_ops */
+DATA(insert (	3361   27 27 1 s	387 405 0 ));
 /* oidvector_ops */
 DATA(insert (	1992   30 30 1 s	649 405 0 ));
 /* text_ops */

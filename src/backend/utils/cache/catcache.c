@@ -141,6 +141,11 @@ GetCCHashEqFuncs(Oid keytype, PGFunction *hashfunc, RegProcedure *eqfunc)
 
 			*eqfunc = F_TEXTEQ;
 			break;
+		case TIDOID: /* Is this needed? */
+			*hashfunc = hashtid;
+
+			*eqfunc = F_TIDEQ;
+			break;
 		case OIDOID:
 		case REGPROCOID:
 		case REGPROCEDUREOID:

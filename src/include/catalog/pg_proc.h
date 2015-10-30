@@ -666,6 +666,8 @@ DATA(insert OID = 452 (  hashfloat8		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1
 DESCR("hash");
 DATA(insert OID = 453 (  hashoid		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "26" _null_ _null_ _null_ _null_ _null_ hashoid _null_ _null_ _null_ ));
 DESCR("hash");
+DATA(insert OID = 3360 (  hashtid		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "27" _null_ _null_ _null_ _null_ _null_ hashtid _null_ _null_ _null_ ));
+DESCR("hash");
 DATA(insert OID = 454 (  hashchar		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "18" _null_ _null_ _null_ _null_ _null_ hashchar _null_ _null_ _null_ ));
 DESCR("hash");
 DATA(insert OID = 455 (  hashname		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "19" _null_ _null_ _null_ _null_ _null_ hashname _null_ _null_ _null_ ));

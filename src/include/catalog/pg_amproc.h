@@ -164,6 +164,7 @@ DATA(insert (	1983   1186 1186 1 1697 ));
 DATA(insert (	1985   829 829 1 399 ));
 DATA(insert (	1987   19 19 1 455 ));
 DATA(insert (	1990   26 26 1 453 ));
+DATA(insert (	3361   27 27 1 3360 ));
 DATA(insert (	1992   30 30 1 457 ));
 DATA(insert (	1995   25 25 1 400 ));
 DATA(insert (	1997   1083 1083 1 1688 ));

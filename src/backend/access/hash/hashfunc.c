@@ -74,6 +74,12 @@ hashoid(PG_FUNCTION_ARGS)
 	return hash_uint32((uint32) PG_GETARG_OID(0));
 }
 
+Datum hashtid(PG_FUNCTION_ARGS)
+{
+	return hash_any((unsigned char *) PG_GETARG_POINTER(0),
+					sizeof(ItemPointerData));
+}
+
 Datum
 hashenum(PG_FUNCTION_ARGS)
 {

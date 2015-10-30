@@ -118,6 +118,7 @@ DATA(insert OID = 2222 (	405		bool_ops		PGNSP PGUID ));
 DATA(insert OID = 2223 (	405		bytea_ops		PGNSP PGUID ));
 DATA(insert OID = 2224 (	405		int2vector_ops	PGNSP PGUID ));
 DATA(insert OID = 2789 (	403		tid_ops			PGNSP PGUID ));
+DATA(insert OID = 3361 (	405		tid_ops			PGNSP PGUID ));
 DATA(insert OID = 2225 (	405		xid_ops			PGNSP PGUID ));
 DATA(insert OID = 2226 (	405		cid_ops			PGNSP PGUID ));
 DATA(insert OID = 2227 (	405		abstime_ops		PGNSP PGUID ));
