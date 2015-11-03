@@ -40,6 +40,10 @@ typedef void (*ExecColumnStoreClose_function) (ColumnStoreHandler *handler);
 
 typedef void (*ExecColumnStoreTruncate_function) (Relation rel);
 
+typedef int (*ExecColumnStoreSample_function) (Relation onerel, int elevel,
+												HeapTuple *rows, int targrows,
+												double *totalrows,
+												double *totaldeadrows);
 /*
  * ColumnStoreRoutine is the struct returned by a column store's handler
  * function.  It provides pointers to the callback functions needed by the
@@ -83,6 +87,9 @@ typedef struct ColumnStoreRoutine
 
 	/* truncate column store */
 	ExecColumnStoreTruncate_function ExecColumnStoreTruncate;
+
+	/* Populated an array of sample rows */
+	ExecColumnStoreSample_function ExecColumnStoreSample;
 } ColumnStoreRoutine;
 
 

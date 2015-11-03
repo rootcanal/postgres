@@ -392,7 +392,7 @@ cost_colstore_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	Assert(baserel->relid > 0);
 	Assert(baserel->rtekind == RTE_RELATION);
 
-	path->rows = baserel->tuples;
+	path->rows = baserel->rows;
 
 	get_tablespace_page_costs(baserel->reltablespace,
 							  NULL,

@@ -13,6 +13,7 @@
 #include "access/htup_details.h"
 #include "catalog/heap.h"
 #include "colstore/colstoreapi.h"
+#include "commands/vacuum.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
@@ -44,6 +45,9 @@ static void vertical_markpos(ColumnStoreHandler *handler);
 static void vertical_restrpos(ColumnStoreHandler *handler);
 static void vertical_close(ColumnStoreHandler *handler);
 static void vertical_truncate(Relation rel);
+static int vertical_sample(Relation onerel, int elevel, HeapTuple *rows,
+						   int targrows, double *totalrows,
+						   double *totaldeadrows);
 
 Datum
 vertical_cstore_handler(PG_FUNCTION_ARGS)
@@ -60,6 +64,7 @@ vertical_cstore_handler(PG_FUNCTION_ARGS)
 	routine->ExecColumnStoreRestrPos = vertical_restrpos;
 	routine->ExecColumnStoreClose = vertical_close;
 	routine->ExecColumnStoreTruncate = vertical_truncate;
+	routine->ExecColumnStoreSample = vertical_sample;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -237,4 +242,12 @@ static void
 vertical_truncate(Relation rel)
 {
 	heap_truncate_one_rel(rel);
+}
+
+static int
+vertical_sample(Relation onerel, int elevel, HeapTuple *rows, int targrows,
+				double *totalrows, double *totaldeadrows)
+{
+	return acquire_sample_rows(onerel, elevel, rows, targrows, totalrows,
+							   totaldeadrows);
 }

@@ -28,6 +28,7 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_inherits_fn.h"
 #include "catalog/pg_namespace.h"
+#include "colstore/colstoreapi.h"
 #include "commands/dbcommands.h"
 #include "commands/tablecmds.h"
 #include "commands/vacuum.h"
@@ -85,15 +86,11 @@ static void compute_index_stats(Relation onerel, double totalrows,
 					MemoryContext col_context);
 static VacAttrStats *examine_attribute(Relation onerel, int attnum,
 				  Node *index_expr);
-static int acquire_sample_rows(Relation onerel, int elevel,
-					HeapTuple *rows, int targrows,
-					double *totalrows, double *totaldeadrows);
 static int	compare_rows(const void *a, const void *b);
 static int acquire_inherited_sample_rows(Relation onerel, int elevel,
 							  HeapTuple *rows, int targrows,
 							  double *totalrows, double *totaldeadrows);
-static void update_attstats(Oid relid, bool inh,
-				int natts, VacAttrStats **vacattrstats);
+static void update_attstats(bool inh, int natts, VacAttrStats **vacattrstats);
 static Datum std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 static Datum ind_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 
@@ -501,6 +498,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	{
 		MemoryContext col_context,
 					old_context;
+		bool		gotoffheap = false;
 
 		col_context = AllocSetContextCreate(anl_context,
 											"Analyze Column",
@@ -513,6 +511,13 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 		{
 			VacAttrStats *stats = vacattrstats[i];
 			AttributeOpts *aopt;
+
+			/* Don't attempt to analyze off-heap attributes */
+			if (stats->attr->attphynum == InvalidAttrNumber)
+			{
+				gotoffheap = true;
+				continue;
+			}
 
 			stats->rows = rows;
 			stats->tupDesc = onerel->rd_att;
@@ -544,6 +549,100 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 								rows, numrows,
 								col_context);
 
+		if (gotoffheap)
+		{
+			Bitmapset *cstores = NULL;
+
+			RelationGetColStoreList(onerel);
+
+			if (!onerel->rd_cstlist)
+				elog(ERROR, "Found off heap columns on relation which has no column stores");
+
+			for (i = 0; i < attr_cnt; i++)
+			{
+				VacAttrStats *stats = vacattrstats[i];
+				ListCell *l;
+				int cstoreidx;
+
+				if (stats->attr->attphynum != InvalidAttrNumber)
+					continue;
+
+				cstoreidx = 0;
+				foreach(l, onerel->rd_cstlist)
+				{
+					Oid cstoreoid = lfirst_oid(l);
+					Relation crel;
+					int col;
+					bool found = false;
+
+					/* Have we already decided to analyze this column store? */
+					if (bms_is_member(cstoreidx, cstores))
+						continue;
+
+					crel = relation_open(cstoreoid, NoLock);
+					for (col = 0; col < crel->rd_cstore->cstnatts; col++)
+					{
+						if (crel->rd_cstore->cstatts.values[col] == stats->attr->attnum)
+						{
+							Form_pg_attribute newattr = crel->rd_att->attrs[col + 1];
+
+							newattr->attstattarget = stats->attr->attstattarget;
+							stats->tupattnum = newattr->attnum;
+							stats->tupDesc = crel->rd_att;
+							stats->attr = newattr;
+
+							cstores = bms_add_member(cstores, cstoreidx);
+							found = true;
+							break;
+						}
+					}
+					relation_close(crel, NoLock);
+
+					if (found)
+						break;
+				}
+			}
+
+			if (cstores != NULL)
+			{
+				int cstoreidx = - 1;
+
+				while ((cstoreidx = bms_next_member(cstores, cstoreidx)) >= 0)
+				{
+					Oid cstoreoid = list_nth_oid(onerel->rd_cstlist, cstoreidx);
+					Relation crel;
+					ColumnStoreRoutine *routine;
+					crel = relation_open(cstoreoid, AccessShareLock);
+
+					routine = GetColumnStoreRoutineForRelation(crel, false);
+
+					if (routine->ExecColumnStoreSample == NULL)
+						elog(ERROR, "Sample routine not supplied by column store AM");
+
+					routine->ExecColumnStoreSample(crel,  elevel, rows,
+									 targrows, &totalrows, &totaldeadrows);
+
+					for (i = 0; i < attr_cnt; i++)
+					{
+						VacAttrStats *stats = vacattrstats[i];
+
+						if (stats->attr->attrelid == cstoreoid)
+						{
+							stats->rows = rows;
+							(*stats->compute_stats) (stats,
+													 std_fetch_func,
+													 numrows,
+													 totalrows);
+						}
+					}
+
+					relation_close(crel, AccessShareLock);
+				}
+			}
+		}
+
+
+
 		MemoryContextSwitchTo(old_context);
 		MemoryContextDelete(col_context);
 
@@ -552,15 +651,13 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 		 * previous statistics for the target columns.  (If there are stats in
 		 * pg_statistic for columns we didn't process, we leave them alone.)
 		 */
-		update_attstats(RelationGetRelid(onerel), inh,
-						attr_cnt, vacattrstats);
+		update_attstats(inh, attr_cnt, vacattrstats);
 
 		for (ind = 0; ind < nindexes; ind++)
 		{
 			AnlIndexData *thisdata = &indexdata[ind];
 
-			update_attstats(RelationGetRelid(Irel[ind]), false,
-							thisdata->attr_cnt, thisdata->vacattrstats);
+			update_attstats(false, thisdata->attr_cnt, thisdata->vacattrstats);
 		}
 	}
 
@@ -862,10 +959,6 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	if (attr->attisdropped)
 		return NULL;
 
-	/* Don't attempt to analyze off-heap attributes */
-	if (attr->attphynum == InvalidAttrNumber)
-		return NULL;
-
 	/* Don't analyze column if user has specified not to */
 	if (attr->attstattarget == 0)
 		return NULL;
@@ -973,7 +1066,7 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
  * block.  The previous sampling method put too much credence in the row
  * density near the start of the table.
  */
-static int
+int
 acquire_sample_rows(Relation onerel, int elevel,
 					HeapTuple *rows, int targrows,
 					double *totalrows, double *totaldeadrows)
@@ -1476,7 +1569,7 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
  *		by taking a self-exclusive lock on the relation in analyze_rel().
  */
 static void
-update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
+update_attstats(bool inh, int natts, VacAttrStats **vacattrstats)
 {
 	Relation	sd;
 	int			attno;
@@ -1511,7 +1604,7 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 			replaces[i] = true;
 		}
 
-		values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(relid);
+		values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(stats->attr->attrelid);
 		values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(stats->attr->attnum);
 		values[Anum_pg_statistic_stainherit - 1] = BoolGetDatum(inh);
 		values[Anum_pg_statistic_stanullfrac - 1] = Float4GetDatum(stats->stanullfrac);
@@ -1575,7 +1668,7 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 
 		/* Is there already a pg_statistic tuple for this attribute? */
 		oldtup = SearchSysCache3(STATRELATTINH,
-								 ObjectIdGetDatum(relid),
+								 ObjectIdGetDatum(stats->attr->attrelid),
 								 Int16GetDatum(stats->attr->attnum),
 								 BoolGetDatum(inh));
 
