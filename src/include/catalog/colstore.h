@@ -39,4 +39,11 @@ extern Oid get_relation_cstore_oid(Oid relid, const char *cstore_name,
 extern void RemoveColstoreById(Oid cstoreOid);
 extern Oid GetColumnStoreAMByName(char *cstamname, bool missing_ok);
 
+/* XXX these are temporary hacks */
+extern void FormColumnStoreDatum(ColumnStoreHandler *handler,
+					 HeapTuple tuple, TupleDesc tupdesc,
+					 Datum *values, bool *isnull);
+extern HeapTuple FilterHeapTuple(ResultRelInfo *resultRelInfo, HeapTuple tuple,
+				TupleDesc *heapdesc);
+
 #endif		/* COLSTORE_H */

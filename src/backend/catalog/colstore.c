@@ -644,6 +644,108 @@ CloseColumnStore(ColumnStoreHandler *csthandler)
 	pfree(csthandler);
 }
 
+/* ----------------
+ *		FormColumnStoreDatum
+ *			Construct values[] and isnull[] arrays for a new column store tuple.
+ *
+ *	handler			column store handler
+ *	slot			Heap tuple for which we must prepare a column store entry
+ *	values			Array of column store Datums (output area)
+ *	isnull			Array of is-null indicators (output area)
+ * ----------------
+ */
+void
+FormColumnStoreDatum(ColumnStoreHandler *handler,
+					 HeapTuple tuple,
+					 TupleDesc tupdesc,
+					 Datum *values,
+					 bool *isnull)
+{
+	int		i;
+
+	/*
+	 * XXX nasty hack: inject the TID as first column.  This should be
+	 * parametrized better somehow ...
+	 */
+	values[0] = PointerGetDatum(&(tuple->t_self)); /* XXX should be ItemPointerGetDatum */
+	isnull[0] = false;
+
+	for (i = 1; i <= handler->csh_NumColumnStoreAttrs; i++)
+		values[i] = heap_getlogattr(tuple,
+								 handler->csh_KeyAttrNumbers[i - 1],
+								 tupdesc,
+								 &isnull[i]);
+}
+
+/*
+ * Builds a descriptor for the heap part of the relation, and a tuple with only
+ * the relevant attributes.
+ */
+HeapTuple
+FilterHeapTuple(ResultRelInfo *resultRelInfo, HeapTuple tuple, TupleDesc *heapdesc)
+{
+	int			attnum;
+	Bitmapset  *cstoreatts = NULL;	/* attributes mentioned in colstore */
+	TupleDesc	origdesc = resultRelInfo->ri_RelationDesc->rd_att;
+	HeapTuple	newtup;
+	ListCell   *l;
+
+	/* used to build the new descriptor / tuple */
+	int		natts;
+	int		i;
+	Datum  *values;
+	bool   *nulls;
+
+	/* should not be called with no column stores */
+	Assert(resultRelInfo->ri_ColumnStoreHandler != NIL);
+
+	/* XXX should use attinheap here instead of this */
+	foreach(l, resultRelInfo->ri_ColumnStoreHandler)
+	{
+		ColumnStoreHandler *handler = lfirst(l);
+		int			i;
+
+		for (i = 0; i < handler->csh_NumColumnStoreAttrs; i++)
+			cstoreatts = bms_add_member(cstoreatts,
+										handler->csh_KeyAttrNumbers[i]);
+	}
+
+	/* we should get some columns from column stores */
+	Assert(bms_num_members(cstoreatts) > 0);
+
+	/* the new descriptor contains only the remaining attributes */
+	natts = origdesc->natts - bms_num_members(cstoreatts);
+
+	*heapdesc = CreateTemplateTupleDesc(natts, false);
+
+	values = (Datum *) palloc0(sizeof(Datum) * natts);
+	nulls  = (bool *) palloc0(sizeof(bool) * natts);
+
+	attnum = 1;
+	for (i = 0; i < origdesc->natts; i++)
+	{
+		/* if part of a column store, skip the attribute */
+		if (bms_is_member(origdesc->attrs[i]->attnum, cstoreatts))
+			continue;
+
+		values[attnum - 1] = heap_getattr(tuple, i + 1, origdesc,
+										  &nulls[attnum - 1]);
+
+		TupleDescCopyEntry(*heapdesc, attnum++, origdesc, i + 1);
+	}
+
+	newtup = heap_form_tuple(*heapdesc, values, nulls);
+
+	/* copy important header fields */
+	newtup->t_self = tuple->t_self;
+	newtup->t_data->t_ctid = tuple->t_data->t_ctid;
+
+	pfree(values);
+	pfree(nulls);
+
+	return newtup;
+}
+
 /*
  * GetColumnStoreRoutine - call the specified column store handler routine
  * to get its ColumnStoreRoutine struct.
