@@ -39,6 +39,7 @@
 
 #include "access/htup_details.h"
 #include "access/xact.h"
+#include "catalog/colstore.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "executor/nodeModifyTable.h"
@@ -408,11 +409,56 @@ ExecInsert(ModifyTableState *mtstate,
 			specToken = SpeculativeInsertionLockAcquire(GetCurrentTransactionId());
 			HeapTupleHeaderSetSpeculativeToken(tuple->t_data, specToken);
 
-			/* insert the tuple, with the speculative token */
-			newId = heap_insert(resultRelationDesc, tuple,
-								estate->es_output_cid,
-								HEAP_INSERT_SPECULATIVE,
-								NULL);
+			/*
+			 * insert the tuple, with the speculative token
+			 *
+			 * Note: heap_insert returns the tid (location) of the new tuple in
+			 * the t_self field.
+			 *
+			 * We need to remove the columns that are stored in the column store
+			 * from the descriptor and heap tuple, so that we only store the heap
+			 * part using heap_insert. We'll create a new tuple descriptor with
+			 * only the heap attributes, and create a small 'heap tuple' matching
+			 * the descriptor.
+			 */
+
+			if (resultRelationDesc->rd_att->tdattorder == ATTRORDER_OFFHEAPATTRS)
+			{
+				TupleDesc		tupDesc = resultRelationDesc->rd_att;
+				int				nattrs = tupDesc->natts;
+				HeapTuple		heaptuple;
+				Datum		   *values;
+				bool		   *isnull;
+				int				attr;
+
+				/*
+				 * Tuple requires translation from the logical tuple order,
+				 * into on-disk physical tuple order. Perhaps there is a better
+				 * way to do this, maybe we could delay forming the tuple and
+				 * only ever form a physical tuple?
+				 */
+				values = (Datum *) palloc(nattrs * sizeof(Datum));
+				isnull = (bool *) palloc(nattrs * sizeof(bool));
+
+				for (attr = 0; attr < nattrs; attr++)
+					values[attr] = heap_getlogattr(tuple, attr + 1, tupDesc, &isnull[attr]);
+
+				heaptuple = heap_form_tuple(tupDesc, values, isnull);
+				TupleDescCacheReset(tupDesc);
+
+				newId = heap_insert(resultRelationDesc, heaptuple,
+									estate->es_output_cid,
+									0, NULL);
+				ItemPointerCopy(&heaptuple->t_self, &tuple->t_self);
+
+				ExecInsertColStoreTuples(tuple, estate);
+				TupleDescCacheReset(tupDesc); /* XXX yuck, but seems to be needed */
+			}
+			else
+				newId = heap_insert(resultRelationDesc, tuple,
+									estate->es_output_cid,
+									HEAP_INSERT_SPECULATIVE,
+									NULL);
 
 			/* insert index entries for tuple */
 			recheckIndexes = ExecInsertIndexTuples(slot, &(tuple->t_self),
@@ -449,15 +495,43 @@ ExecInsert(ModifyTableState *mtstate,
 		}
 		else
 		{
-			/*
-			 * insert the tuple normally.
-			 *
-			 * Note: heap_insert returns the tid (location) of the new tuple
-			 * in the t_self field.
-			 */
-			newId = heap_insert(resultRelationDesc, tuple,
-								estate->es_output_cid,
-								0, NULL);
+			TupleDesc tupDesc = resultRelationDesc->rd_att;
+
+			if (tupDesc->tdattorder == ATTRORDER_OFFHEAPATTRS)
+			{
+				int				nattrs = tupDesc->natts;
+				HeapTuple		heaptuple;
+				Datum		   *values;
+				bool		   *isnull;
+				int				attr;
+
+				/*
+				 * Tuple requires translation from the logical tuple order,
+				 * into on-disk physical tuple order. Perhaps there is a better
+				 * way to do this, maybe we could delay forming the tuple and
+				 * only ever form a physical tuple?
+				 */
+				values = (Datum *) palloc(nattrs * sizeof(Datum));
+				isnull = (bool *) palloc(nattrs * sizeof(bool));
+
+				for (attr = 0; attr < nattrs; attr++)
+					values[attr] = heap_getlogattr(tuple, attr + 1, tupDesc, &isnull[attr]);
+
+				heaptuple = heap_form_tuple(tupDesc, values, isnull);
+				TupleDescCacheReset(tupDesc);
+
+				newId = heap_insert(resultRelationDesc, heaptuple,
+									estate->es_output_cid,
+									0, NULL);
+				ItemPointerCopy(&heaptuple->t_self, &tuple->t_self);
+
+				ExecInsertColStoreTuples(tuple, estate);
+				TupleDescCacheReset(tupDesc); /* XXX yuck, but seems to be needed */
+			}
+			else
+				newId = heap_insert(resultRelationDesc, tuple,
+									estate->es_output_cid,
+									0, NULL);
 
 			/* insert index entries for tuple */
 			if (resultRelInfo->ri_NumIndices > 0)
@@ -903,12 +977,47 @@ lreplace:;
 		 * can't-serialize error if not. This is a special-case behavior
 		 * needed for referential integrity updates in transaction-snapshot
 		 * mode transactions.
+		 *
+		 * We need to remove the columns that are stored in the column store
+		 * from the descriptor and heap tuple, so that we only store the heap
+		 * part using heap_insert. We'll create a new tuple descriptor with
+		 * only the heap attributes, and create a small 'heap tuple' matching
+		 * the descriptor.
+		 *
+		 * FIXME This is just temporary solution, a bit dirty. Needs to be
+		 *       done properly (moved to methods, possibly applied to other
+		 *       places, etc.).
 		 */
-		result = heap_update(resultRelationDesc, tupleid, tuple,
-							 estate->es_output_cid,
-							 estate->es_crosscheck_snapshot,
-							 true /* wait for commit */ ,
-							 &hufd, &lockmode);
+		if (resultRelInfo->ri_ColumnStoreHandler != NIL)
+		{
+			HeapTuple heaptuple;
+			TupleDesc heapdesc;
+			TupleDesc fulldesc;
+
+			heaptuple = FilterHeapTuple(resultRelInfo, tuple, &heapdesc);
+
+			fulldesc = resultRelationDesc->rd_att;
+			resultRelationDesc->rd_att = heapdesc;
+
+			result = heap_update(resultRelationDesc, tupleid, heaptuple,
+								 estate->es_output_cid,
+								 estate->es_crosscheck_snapshot,
+								 true /* wait for commit */ ,
+								 &hufd, &lockmode);
+
+			resultRelationDesc->rd_att = fulldesc;
+
+			heap_freetuple(heaptuple);
+			FreeTupleDesc(heapdesc);
+		}
+		else
+			result = heap_update(resultRelationDesc, tupleid, tuple,
+								 estate->es_output_cid,
+								 estate->es_crosscheck_snapshot,
+								 true /* wait for commit */ ,
+								 &hufd, &lockmode);
+
+
 		switch (result)
 		{
 			case HeapTupleSelfUpdated:
@@ -989,16 +1098,20 @@ lreplace:;
 		 */
 
 		/*
-		 * insert index entries for tuple
+		 * insert index and column store entries for tuple
 		 *
 		 * Note: heap_update returns the tid (location) of the new tuple in
 		 * the t_self field.
 		 *
-		 * If it's a HOT update, we mustn't insert new index entries.
+		 * If it's a HOT update, we mustn't insert new index and column store
+		 * entries.
 		 */
 		if (resultRelInfo->ri_NumIndices > 0 && !HeapTupleIsHeapOnly(tuple))
 			recheckIndexes = ExecInsertIndexTuples(slot, &(tuple->t_self),
 												   estate, false, NULL, NIL);
+
+		if (resultRelInfo->ri_ColumnStoreHandler != NIL && !HeapTupleIsHeapOnly(tuple))
+			ExecInsertColStoreTuples(tuple, estate);
 	}
 
 	if (canSetTag)
@@ -1577,6 +1690,9 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 			operation != CMD_DELETE &&
 			resultRelInfo->ri_IndexRelationDescs == NULL)
 			ExecOpenIndices(resultRelInfo, mtstate->mt_onconflict != ONCONFLICT_NONE);
+
+		/* TODO should use relhascolstore just like indexes*/
+		ExecOpenColumnStores(resultRelInfo);
 
 		/* Now init the plan for this result rel */
 		estate->es_result_relation_info = resultRelInfo;

@@ -4,6 +4,7 @@
 #include "nodes/execnodes.h"
 #include "nodes/nodes.h"
 #include "nodes/parsenodes.h"
+#include "nodes/execnodes.h"
 #include "nodes/pg_list.h"
 #include "utils/relcache.h"
 

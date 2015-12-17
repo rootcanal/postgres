@@ -29,6 +29,7 @@
 #include "miscadmin.h"
 #include "nodes/bitmapset.h"
 #include "nodes/parsenodes.h"
+#include "nodes/execnodes.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"

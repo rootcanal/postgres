@@ -25,6 +25,7 @@
 #include "access/sysattr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "catalog/colstore.h"
 #include "catalog/pg_type.h"
 #include "commands/copy.h"
 #include "commands/defrem.h"
@@ -2342,6 +2343,8 @@ CopyFrom(CopyState cstate)
 
 	ExecOpenIndices(resultRelInfo, false);
 
+	ExecOpenColumnStores(resultRelInfo);
+
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
 	estate->es_result_relation_info = resultRelInfo;
@@ -2507,6 +2510,12 @@ CopyFrom(CopyState cstate)
 			{
 				List	   *recheckIndexes = NIL;
 
+				/*
+				 * FIXME This needs to handle the column stores (it's not
+				 *       handled by the batching code because of the before
+				 *       row insert triggers or something).
+				 */
+
 				/* OK, store the tuple and create index entries for it */
 				heap_insert(cstate->rel, tuple, mycid, hi_options, bistate);
 
@@ -2565,6 +2574,8 @@ CopyFrom(CopyState cstate)
 
 	ExecCloseIndices(resultRelInfo);
 
+	ExecCloseColumnStores(resultRelInfo);
+
 	FreeExecutorState(estate);
 
 	/*
@@ -2605,13 +2616,79 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 	 * before calling it.
 	 */
 	oldcontext = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
-	heap_multi_insert(cstate->rel,
-					  bufferedTuples,
-					  nBufferedTuples,
-					  mycid,
-					  hi_options,
-					  bistate);
+
+	/*
+	 * If the physical attribute order matches the logcal, then we can simply
+	 * insert the tuples. If the attributes in the tuple are not in logical
+	 * order then we'll have built the tuple in physical order in the calling
+	 * function anyway, so we can also just insert the tuples.
+	 */
+	if (tupDesc->tdattorder == ATTRORDER_PHYSMATCHLOGICAL ||
+		tupDesc->tdattorder == ATTRORDER_OUTOFORDER)
+	{
+		heap_multi_insert(cstate->rel,
+						  bufferedTuples,
+						  nBufferedTuples,
+						  mycid,
+						  hi_options,
+						  bistate);
+	}
+	else
+	{
+		HeapTuple	   *diskTuples;
+		Datum		   *values;
+		bool			*isnull;
+
+		int nattrs = tupDesc->natts;
+
+		/*
+		 * Tuples require translation from the logical tuple order, into
+		 * on-disk physical tuple order. Perhaps there is a better way to do
+		 * this, maybe we could delay forming the tuple and only ever form a
+		 * physical tuple?
+		 */
+		diskTuples = (HeapTuple *) palloc(nBufferedTuples * sizeof(HeapTuple));
+		values = (Datum *) palloc(nattrs * sizeof(Datum));
+		isnull = (bool *) palloc(nattrs * sizeof(bool));
+
+		for (i = 0; i < nBufferedTuples; i++)
+		{
+			int attr;
+
+			for (attr = 0; attr < nattrs; attr++)
+				values[attr] = heap_getlogattr(bufferedTuples[i], attr + 1, tupDesc, &isnull[attr]);
+
+			diskTuples[i] = heap_form_tuple(tupDesc, values, isnull);
+		}
+
+		/*
+		 * Clear any cached attribute offsets from reading the logical tuple,
+		 * as these will be the wrong value for reading the physical tuple.
+		 */
+		TupleDescCacheReset(tupDesc);
+
+		heap_multi_insert(cstate->rel,
+						  diskTuples,
+						  nBufferedTuples,
+						  mycid,
+						  hi_options,
+						  bistate);
+
+		/*
+		 * Harvest the TIDs from the inserted tuples, we need to apply these
+		 * to the column store in order to link the records
+		 */
+		for(i = 0; i < nBufferedTuples; i++)
+			ItemPointerCopy(&diskTuples[i]->t_self, &bufferedTuples[i]->t_self);
+
+		if (resultRelInfo->ri_ColumnStoreHandler == NIL)
+			elog(ERROR, "TupleDesc has off-heap attibutes but relation has no column stores");
+
+		ExecBatchInsertColStoreTuples(nBufferedTuples, bufferedTuples, estate);
+
+	}
 	MemoryContextSwitchTo(oldcontext);
+
 
 	/*
 	 * If there are any indexes, update them for all the inserted tuples, and

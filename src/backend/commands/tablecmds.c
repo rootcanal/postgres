@@ -1270,9 +1270,12 @@ ExecuteTruncate(TruncateStmt *stmt)
 			}
 
 			/*
-			 * Reconstruct the indexes to match, and we're done.
+			 * Reconstruct the indexes to match.
 			 */
 			reindex_relation(heap_relid, REINDEX_REL_PROCESS_TOAST, 0);
+
+			if (rel->rd_rel->relhascstore)
+				ExecTruncateColumnStores(rel);
 		}
 
 		pgstat_count_truncate(rel);

@@ -57,6 +57,7 @@
 #include "catalog/storage_xlog.h"
 #include "commands/tablecmds.h"
 #include "commands/typecmds.h"
+#include "executor/executor.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/var.h"
@@ -2822,6 +2823,9 @@ heap_truncate_one_rel(Relation rel)
 		/* keep the lock... */
 		heap_close(toastrel, NoLock);
 	}
+
+	if (rel->rd_rel->relhascstore)
+		ExecTruncateColumnStores(rel);
 }
 
 /*
