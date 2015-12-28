@@ -2127,6 +2127,16 @@ _outAppendRelInfo(StringInfo str, const AppendRelInfo *node)
 }
 
 static void
+_outColstoreRelInfo(StringInfo str, const ColstoreRelInfo *node)
+{
+	WRITE_NODE_TYPE("COLSTORERELINFO");
+
+	WRITE_UINT_FIELD(parent_relid);
+	WRITE_UINT_FIELD(child_relid);
+	WRITE_OID_FIELD(child_oid);
+}
+
+static void
 _outPlaceHolderInfo(StringInfo str, const PlaceHolderInfo *node)
 {
 	WRITE_NODE_TYPE("PLACEHOLDERINFO");
@@ -3447,6 +3457,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_AppendRelInfo:
 				_outAppendRelInfo(str, obj);
+				break;
+			case T_ColstoreRelInfo:
+				_outColstoreRelInfo(str, obj);
 				break;
 			case T_PlaceHolderInfo:
 				_outPlaceHolderInfo(str, obj);

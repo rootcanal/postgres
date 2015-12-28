@@ -860,6 +860,16 @@ _equalAppendRelInfo(const AppendRelInfo *a, const AppendRelInfo *b)
 }
 
 static bool
+_equalColstoreRelInfo(const ColstoreRelInfo *a, const ColstoreRelInfo *b)
+{
+	COMPARE_SCALAR_FIELD(parent_relid);
+	COMPARE_SCALAR_FIELD(child_relid);
+	COMPARE_SCALAR_FIELD(child_oid);
+
+	return true;
+}
+
+static bool
 _equalPlaceHolderInfo(const PlaceHolderInfo *a, const PlaceHolderInfo *b)
 {
 	COMPARE_SCALAR_FIELD(phid);
@@ -2897,6 +2907,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_AppendRelInfo:
 			retval = _equalAppendRelInfo(a, b);
+			break;
+		case T_ColstoreRelInfo:
+			retval = _equalColstoreRelInfo(a, b);
 			break;
 		case T_PlaceHolderInfo:
 			retval = _equalPlaceHolderInfo(a, b);

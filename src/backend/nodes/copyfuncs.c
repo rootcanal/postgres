@@ -2102,6 +2102,21 @@ _copyAppendRelInfo(const AppendRelInfo *from)
 }
 
 /*
+ * _copyColstoreRelInfo
+ */
+static ColstoreRelInfo *
+_copyColstoreRelInfo(const ColstoreRelInfo *from)
+{
+	ColstoreRelInfo *newnode = makeNode(ColstoreRelInfo);
+
+	COPY_SCALAR_FIELD(parent_relid);
+	COPY_SCALAR_FIELD(child_relid);
+	COPY_SCALAR_FIELD(child_oid);
+
+	return newnode;
+}
+
+/*
  * _copyPlaceHolderInfo
  */
 static PlaceHolderInfo *
@@ -4577,6 +4592,9 @@ copyObject(const void *from)
 			break;
 		case T_AppendRelInfo:
 			retval = _copyAppendRelInfo(from);
+			break;
+		case T_ColstoreRelInfo:
+			retval = _copyColstoreRelInfo(from);
 			break;
 		case T_PlaceHolderInfo:
 			retval = _copyPlaceHolderInfo(from);

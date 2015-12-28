@@ -1999,6 +1999,9 @@ expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
+		case T_ColstoreRelInfo:
+			/* nothing to do at present */
+			break;
 		case T_PlaceHolderInfo:
 			return walker(((PlaceHolderInfo *) node)->ph_var, context);
 		case T_RangeTblFunction:
@@ -2771,6 +2774,15 @@ expression_tree_mutator(Node *node,
 
 				FLATCOPY(newnode, appinfo, AppendRelInfo);
 				MUTATE(newnode->translated_vars, appinfo->translated_vars, List *);
+				return (Node *) newnode;
+			}
+			break;
+		case T_ColstoreRelInfo:
+			{
+				ColstoreRelInfo *cstinfo = (ColstoreRelInfo *) node;
+				ColstoreRelInfo *newnode;
+
+				FLATCOPY(newnode, cstinfo, ColstoreRelInfo);
 				return (Node *) newnode;
 			}
 			break;

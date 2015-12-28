@@ -1590,6 +1590,16 @@ typedef struct AppendRelInfo
 	Oid			parent_reloid;	/* OID of parent relation */
 } AppendRelInfo;
 
+/* for column stores.  XXX Improve this comment */
+typedef struct ColstoreRelInfo
+{
+	NodeTag		type;
+
+	Index		parent_relid;	/* parent RT index */
+	Index		child_relid;	/* colstore RT index */
+	Oid			child_oid;		/* colstore's OID */
+} ColstoreRelInfo;
+
 /*
  * For each distinct placeholder expression generated during planning, we
  * store a PlaceHolderInfo node in the PlannerInfo node's placeholder_list.
