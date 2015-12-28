@@ -412,8 +412,12 @@ CreateColumnStores(Relation rel, List *colstores)
 	heap_close(pg_cstore, RowExclusiveLock);
 }
 
+#include "catalog/pg_type.h"	/* XXX for TIDOID below. Remove */
+
 /*
  * Build a tuple descriptor for a not-yet-catalogued column store.
+ *
+ * XXX ugly hack: consider column 1 to carry heap TID.  Remove someday
  */
 static TupleDesc
 ColumnStoreBuildDesc(ColumnStoreElem *elem, Relation parent)
@@ -425,7 +429,10 @@ ColumnStoreBuildDesc(ColumnStoreElem *elem, Relation parent)
 
 	parentdesc = RelationGetDescr(parent);
 
-	tupdesc = CreateTemplateTupleDesc(list_length(elem->columns), false);
+	tupdesc = CreateTemplateTupleDesc(list_length(elem->columns) + 1, false);
+
+	/* the heap TID is first column */
+	TupleDescInitEntry(tupdesc, attnum++, "heaptid", TIDOID, -1, 0);
 
 	foreach(cell, elem->columns)
 	{
