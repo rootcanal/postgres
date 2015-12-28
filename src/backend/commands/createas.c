@@ -425,11 +425,15 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 *
 	 * XXX: It would arguably make sense to skip this check if into->skipData
 	 * is true.
+	 *
+	 * Note: it's okay for relhascstore to be inaccurate, since it's only used
+	 * for permissions checking.
 	 */
 	rte = makeNode(RangeTblEntry);
 	rte->rtekind = RTE_RELATION;
 	rte->relid = intoRelationAddr.objectId;
 	rte->relkind = relkind;
+	rte->relhascstore = false;
 	rte->requiredPerms = ACL_INSERT;
 
 	for (attnum = 1; attnum <= intoRelationDesc->rd_att->natts; attnum++)

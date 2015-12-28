@@ -861,7 +861,12 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 
 		relkind = get_rel_relkind(trigrec->tgrelid);
 
-		/* Build minimal OLD and NEW RTEs for the rel */
+		/*
+		 * Build minimal OLD and NEW RTEs for the rel.
+		 *
+		 * XXX we don't care about relhascstore because these RTEs are only
+		 * used for rule expansion
+		 */
 		oldrte = makeNode(RangeTblEntry);
 		oldrte->rtekind = RTE_RELATION;
 		oldrte->relid = trigrec->tgrelid;
@@ -2546,6 +2551,7 @@ deparse_context_for(const char *aliasname, Oid relid)
 	rte->rtekind = RTE_RELATION;
 	rte->relid = relid;
 	rte->relkind = RELKIND_RELATION;	/* no need for exactness here */
+	rte->relhascstore = false;		/* nor here */
 	rte->alias = makeAlias(aliasname, NIL);
 	rte->eref = rte->alias;
 	rte->lateral = false;

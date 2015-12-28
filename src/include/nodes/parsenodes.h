@@ -824,6 +824,7 @@ typedef struct RangeTblEntry
 	 */
 	Oid			relid;			/* OID of the relation */
 	char		relkind;		/* relation kind (see pg_class.relkind) */
+	bool		relhascstore;	/* whether column stores are present */
 	struct TableSampleClause *tablesample;		/* sampling info, or NULL */
 
 	/*

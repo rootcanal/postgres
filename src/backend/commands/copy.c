@@ -835,6 +835,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		rte->rtekind = RTE_RELATION;
 		rte->relid = RelationGetRelid(rel);
 		rte->relkind = rel->rd_rel->relkind;
+		rte->relhascstore = rel->rd_rel->relhascstore;
 		rte->requiredPerms = required_access;
 		range_table = list_make1(rte);
 

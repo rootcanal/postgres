@@ -2282,6 +2282,9 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	 * works because it changes user IDs on the fly.)
 	 *
 	 * XXX are there any other show-stopper conditions to check?
+	 *
+	 * XXX we don't care about ->relhascstore because these RTEs are only
+	 * used for permissions checking.
 	 */
 	pkrte = makeNode(RangeTblEntry);
 	pkrte->rtekind = RTE_RELATION;
