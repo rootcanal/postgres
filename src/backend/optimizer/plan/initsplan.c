@@ -14,7 +14,11 @@
  */
 #include "postgres.h"
 
+#include "access/sysattr.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
+#include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
@@ -22,12 +26,14 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "optimizer/placeholder.h"
+#include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/var.h"
 #include "parser/analyze.h"
+#include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
 
@@ -44,7 +50,34 @@ typedef struct PostponedQual
 	Relids		relids;			/* the set of baserels it references */
 } PostponedQual;
 
+/*
+ * cstore_replace_vars_context (and its subsidiary AttributeMap) are used for
+ * replace_rte_variables in expand_column_store_relations; they keep track of
+ * column stores for each individual table while looking to join the column
+ * stores.
+ */
+typedef struct AttributeMap
+{
+	int			colstoreidx;	/* Index of colstore list */
+	AttrNumber	attrno;			/* Varattno in colstore */
+}	AttributeMap;
 
+typedef struct cstore_replace_vars_context
+{
+	int			mapsize;		/* number of elements in attrmap */
+	AttributeMap *attrmap;		/* map of where Vars are physically located */
+	Bitmapset **selectedCols;	/* bitmap of found columns, or NULL if none */
+	int		   *colstore_varno; /* array of varnos reserved for colstore rti,
+								 * or zero if not reserved */
+	int			nextvarno;		/* next free varno to use */
+	List	   *colstores;
+} cstore_replace_vars_context;
+
+static Node *expand_rel_to_join(PlannerInfo *root, RangeTblRef *rtr);
+static Node *replace_csvars_callback(Var *var,
+						replace_rte_variables_context *context);
+static OpExpr *make_columnar_joinqual(PlannerInfo *root, RangeTblRef *heapref,
+					   RangeTblRef *cstoreref);
 static void extract_lateral_references(PlannerInfo *root, RelOptInfo *brel,
 						   Index rtindex);
 static List *deconstruct_recurse(PlannerInfo *root, Node *jtnode,
@@ -125,6 +158,321 @@ add_base_rels_to_query(PlannerInfo *root, Node *jtnode)
 	else
 		elog(ERROR, "unrecognized node type: %d",
 			 (int) nodeTag(jtnode));
+}
+
+/*
+ * expand_column_store_relations
+ * 		Scan the query's jointree, and apply expand_rel_to_join to all RangeTbl
+ * 		references therein.
+ */
+Node *
+expand_column_store_relations(PlannerInfo *root, Node *jtnode)
+{
+	if (jtnode == NULL)
+		return NULL;
+	if (IsA(jtnode, RangeTblRef))
+	{
+		RangeTblRef *rtr = (RangeTblRef *) jtnode;
+
+		return expand_rel_to_join(root, rtr);
+	}
+	else if (IsA(jtnode, FromExpr))
+	{
+		FromExpr   *f = (FromExpr *) jtnode;
+		ListCell   *l;
+
+		foreach(l, f->fromlist)
+			lfirst(l) = expand_column_store_relations(root, (Node *) lfirst(l));
+	}
+	else if (IsA(jtnode, JoinExpr))
+	{
+		JoinExpr   *j = (JoinExpr *) jtnode;
+
+		j->larg = expand_column_store_relations(root, j->larg);
+		j->rarg = expand_column_store_relations(root, j->rarg);
+	}
+	else
+		elog(ERROR, "unrecognized node type: %d",
+			 (int) nodeTag(jtnode));
+
+	return jtnode;
+}
+
+/*****************************************************************************
+ *
+ *	 COLUMN STORES
+ *
+ *****************************************************************************/
+
+/*
+ * expand_rel_to_join
+ * 		Expand a table RTE considering possible column stores
+ *
+ * Given a RangeTblRef, see whether it references a table containing column
+ * stores, and if so, add additional relations for the column stores used
+ * anywhere in the query, and further relations for the joins between those
+ * new relations and the original table relation.
+ *
+ * Additionally, the entire tree is scanned for Vars that reference the
+ * original relation; those that point to columns that are actually in the
+ * column store are mutated into referencing the newly added RTE instead.
+ */
+static Node *
+expand_rel_to_join(PlannerInfo *root, RangeTblRef *rtr)
+{
+	RangeTblEntry *rte = rt_fetch(rtr->rtindex, root->parse->rtable);
+	Node	   *parentnode = (Node *) rtr;
+
+	if (rte->rtekind == RTE_RELATION && rte->relhascstore)
+	{
+		RelOptInfo *rel = makeNode(RelOptInfo);
+
+		/*
+		 * XXX It's a shame we need to call get_relation_info() now, and again
+		 * in add_base_rels_to_query(). Maybe we can do some caching to get
+		 * around the duplicate calls
+		 */
+		get_relation_info(root, rte->relid, false, rel);
+
+		if (rel->cstlist != NIL)
+		{
+			ListCell   *l;
+			cstore_replace_vars_context context;
+			int			colstoreidx;
+			int			ncstores = list_length(rel->cstlist);
+
+			context.mapsize = rel->max_attr + 1;
+			context.attrmap = (AttributeMap *)
+				palloc0(sizeof(AttributeMap) * context.mapsize);
+
+			context.selectedCols =
+				(Bitmapset **) palloc(sizeof(Bitmapset *) * ncstores);
+
+			context.colstore_varno = (int *) palloc0(sizeof(int) * ncstores);
+			context.nextvarno = list_length(root->parse->rtable) + 1;
+			context.colstores = NIL;
+
+			/*
+			 * Here we build an array which marks the physical location of each
+			 * Var which logically belongs to this relation. Vars can be
+			 * stored in the heap, or any of the relation's column stores. We
+			 * index the array by the columns logical location within the
+			 * relation, this is the same as the varattno before it is
+			 * modified later.
+			 *
+			 * Our array elements are ColumnStoreAttrMaps, which contains the
+			 * column store number, as the position in cstlist, and also the
+			 * varattno number of where the attribute is located in the column
+			 * store. Later, when processing this array, we're able to
+			 * determine Vars which belong to the heap by the 'attrno' of these
+			 * being set to 0.
+			 */
+
+			colstoreidx = 0;
+			foreach(l, rel->cstlist)
+			{
+				ColumnStoreOptInfo *info = (ColumnStoreOptInfo *) lfirst(l);
+				int			col;
+
+				for (col = 0; col < info->ncolumns; col++)
+				{
+					AttributeMap *mapitem;
+
+					/* XXX protect against out of range values ? */
+					mapitem = &context.attrmap[info->cstkeys[col]];
+
+					/*
+					 * The actual attribute number of the attribute in the
+					 * colstore is the index of cstkey's + 2. The reason for
+					 * +2 here is that we need to account for varattnos being
+					 * 1-based, and the cstkeys[] array being zero 0-based.
+					 * Also the first user defined varattno in the colstore is
+					 * 2, since varattno 1 is used to store the heap's ctid.
+					 */
+
+					mapitem->attrno = col + 2;
+					mapitem->colstoreidx = colstoreidx;
+				}
+
+				context.selectedCols[colstoreidx] = NULL;
+				colstoreidx++;
+			}
+
+			/*
+			 * Traverse the parse tree to mutate all Vars which belong to this
+			 * relation, updating the colstores list in the context struct.
+			 */
+			replace_rte_variables((Node *) root->parse, rtr->rtindex, 0,
+								  replace_csvars_callback,
+								  (void *) &context, NULL);
+
+			/*
+			 * Add an inner join relation to the rangetable for each necessary
+			 * column store.  Note that we must do this in the same order that we
+			 * found the Vars, as the varnos were "reserved" in that order.
+			 */
+			foreach(l, context.colstores)
+			{
+				ColumnStoreOptInfo *info;
+				JoinExpr   *join;
+				RangeTblEntry *joinrte = makeNode(RangeTblEntry);
+				RangeTblEntry *newrte = makeNode(RangeTblEntry);
+				RangeTblRef *newrtr = makeNode(RangeTblRef);
+				ColstoreRelInfo *cstinfo;
+				int			newrelid;
+				int			newjoinid;
+
+				colstoreidx = lfirst_int(l);
+
+				/*
+				 * lookup the column store by index.
+				 */
+				info = (ColumnStoreOptInfo *) list_nth(rel->cstlist, colstoreidx);
+
+				newrelid = context.colstore_varno[colstoreidx];
+				newjoinid = newrelid - 1;
+
+				/*
+				 * We've found some Vars which belong to this colstore,
+				 * so add a new join.
+				 */
+				joinrte->rtekind = RTE_JOIN;
+				joinrte->relid = InvalidOid;
+				joinrte->subquery = NULL;
+				joinrte->jointype = JOIN_INNER;
+				joinrte->lateral = false;
+				joinrte->inh = false;	/* never true for joins */
+				joinrte->inFromCl = false;
+
+				joinrte->requiredPerms = 0;
+				joinrte->checkAsUser = InvalidOid;
+				joinrte->selectedCols = NULL;
+				joinrte->insertedCols = NULL;
+				joinrte->updatedCols = NULL;
+				joinrte->eref = makeAlias("unnamed_join", NIL);
+
+				newrte->relkind = RTE_RELATION;
+				newrte->relid = info->colstoreoid;
+				newrte->relkind = RELKIND_COLUMN_STORE;
+				newrte->subquery = NULL;
+				newrte->security_barrier = false;
+				newrte->eref = makeNode(Alias);
+				newrte->eref->aliasname = get_cstore_name(info->colstoreoid);
+				newrte->selectedCols = context.selectedCols[colstoreidx];
+
+				newrtr->rtindex = newrelid;
+
+				join = makeNode(JoinExpr);
+				join->jointype = JOIN_INNER;
+				join->isNatural = false;
+				join->larg = (Node *) parentnode;
+				join->rarg = (Node *) newrtr;
+				join->usingClause = NIL;
+				join->quals = (Node *) list_make1(make_columnar_joinqual(root, rtr, newrtr));
+				join->alias = NULL;
+				join->rtindex = newjoinid;
+
+				/*
+				 * Carefully add the 2 new RTEs.  The join comes before the
+				 * column store RTE, as this is the order in which we assigned
+				 * them above.
+				 */
+				root->parse->rtable = lappend(root->parse->rtable, joinrte);
+				root->parse->rtable = lappend(root->parse->rtable, newrte);
+				parentnode = (Node *) join;
+
+				/*
+				 * cons up a new ColstoreRelInfo for this colstore and add it
+				 * to the root list
+				 */
+				cstinfo = makeNode(ColstoreRelInfo);
+				cstinfo->parent_relid = rtr->rtindex;
+				cstinfo->child_relid = newrelid;
+				cstinfo->child_oid = info->colstoreoid;
+				root->colstore_rel_list = lappend(root->colstore_rel_list, cstinfo);
+			}
+
+			pfree(context.attrmap);
+			pfree(context.selectedCols);
+			list_free(context.colstores);
+			pfree(rel);
+		}
+	}
+
+	return parentnode;
+}
+
+static Node *
+replace_csvars_callback(Var *var, replace_rte_variables_context *context)
+{
+	cstore_replace_vars_context *rcon;
+	AttributeMap *map;
+
+	rcon = (cstore_replace_vars_context *) context->callback_arg;
+	map = &rcon->attrmap[var->varattno];
+
+	/*
+	 * Modify this Var if the map indicates it's not in the heap.  Also, for
+	 * Vars that belong to colstores that we hadn't previously seen, reserve
+	 * varnos for both the column store relation and the join relation.
+	 */
+	if (map->attrno != 0)
+	{
+		int			colstoreidx = map->colstoreidx;
+
+		/*
+		 * Determine if we've seen any Vars belonging to this column store
+		 * before. If we have then we've already assigned a varno for the new
+		 * column store relation. If we've not, then we'll need to allocate a
+		 * varno, both for the join and for the new column store.
+		 */
+		if (rcon->colstore_varno[colstoreidx] == 0)
+		{
+			/*
+			 * We'll give this colstore nextvarno + 1. The join rte will be
+			 * nextvarno.
+			 */
+			rcon->colstore_varno[colstoreidx] = rcon->nextvarno + 1;
+			rcon->nextvarno += 2;
+
+			/*
+			 * We must remember the order which we assigned the varnos to the
+			 * column stores so we can add new rtable items later in the same
+			 * order that we assigned the varnos.
+			 */
+			rcon->colstores = lappend_int(rcon->colstores, colstoreidx);
+		}
+
+		/* Modify the Var to reference the column store */
+		var->varoattno = var->varattno = map->attrno;
+		var->varnoold = var->varno = rcon->colstore_varno[colstoreidx];
+		rcon->selectedCols[colstoreidx] =
+			bms_add_member(rcon->selectedCols[colstoreidx], map->attrno);
+	}
+
+	return (Node *) var;
+}
+
+/*
+ * Return an expression that represents the condition that joins a column store
+ * with its owning table.
+ */
+static OpExpr *
+make_columnar_joinqual(PlannerInfo *root, RangeTblRef *heapref,
+					   RangeTblRef *cstoreref)
+{
+	OpExpr	   *joinqual = makeNode(OpExpr);
+	Var		   *heapctid;
+	Var		   *cstorekey;
+
+	heapctid = makeVar(heapref->rtindex, SelfItemPointerAttributeNumber,
+					   TIDOID, -1, InvalidOid, 0);
+	cstorekey = makeVar(cstoreref->rtindex, 1, TIDOID, -1, InvalidOid, 0);
+
+	joinqual->args = list_make2(heapctid, cstorekey);
+	joinqual->opno = TIDEqualOperator;
+
+	return joinqual;
 }
 
 

@@ -120,6 +120,14 @@ query_planner(PlannerInfo *root, List *tlist,
 	root->initial_rels = NIL;
 
 	/*
+	 * For any Relations which have Vars stored in column stores we must
+	 * transform the jointree to include a join to the required colstore.
+	 */
+	parse->jointree =
+		(FromExpr *) expand_column_store_relations(root,
+												   (Node *) parse->jointree);
+
+	/*
 	 * Make a flattened version of the rangetable for faster access (this is
 	 * OK because the rangetable won't change any more), and set up an empty
 	 * array for indexing base relations.

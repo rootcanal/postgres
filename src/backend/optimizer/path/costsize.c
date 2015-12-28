@@ -78,6 +78,7 @@
 #include "access/amapi.h"
 #include "access/htup_details.h"
 #include "access/tsmapi.h"
+#include "catalog/pg_class.h"
 #include "executor/executor.h"
 #include "executor/nodeHash.h"
 #include "miscadmin.h"
@@ -1097,6 +1098,7 @@ cost_tidscan(Path *path, PlannerInfo *root,
 	int			ntuples;
 	ListCell   *l;
 	double		spc_random_page_cost;
+	int			paramrelid;
 
 	/* Should only be applied to base relations */
 	Assert(baserel->relid > 0);
@@ -1155,11 +1157,33 @@ cost_tidscan(Path *path, PlannerInfo *root,
 	 */
 	cost_qual_eval(&tid_qual_cost, tidquals, root);
 
-	/* fetch estimated page cost for tablespace containing table */
-	get_tablespace_page_costs(baserel->reltablespace,
-							  &spc_random_page_cost,
-							  NULL);
+	/*
+	 * XXX dirty hack to reduce costs when joining to column stores.
+	 * The current column store implementation will produce TIDs in
+	 * order, so this is more sequential than random
+	 */
+	if (param_info &&
+		bms_get_singleton_member(param_info->ppi_req_outer, &paramrelid))
+	{
+		RangeTblEntry *outerrte = root->simple_rte_array[paramrelid];
 
+		if (outerrte->relkind == RELKIND_COLUMN_STORE)
+			spc_random_page_cost = seq_page_cost;
+		else
+		{
+			/* fetch estimated page cost for tablespace containing table */
+			get_tablespace_page_costs(baserel->reltablespace,
+									  &spc_random_page_cost,
+									  NULL);
+		}
+	}
+	else
+	{
+		/* fetch estimated page cost for tablespace containing table */
+		get_tablespace_page_costs(baserel->reltablespace,
+								  &spc_random_page_cost,
+								  NULL);
+	}
 	/* disk costs --- assume each tuple on a different page */
 	run_cost += spc_random_page_cost * ntuples;
 
