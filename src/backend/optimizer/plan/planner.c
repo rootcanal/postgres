@@ -447,6 +447,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->multiexpr_params = NIL;
 	root->eq_classes = NIL;
 	root->append_rel_list = NIL;
+	root->colstore_rel_list = NIL;
 	root->rowMarks = NIL;
 	root->hasInheritedTarget = false;
 	root->grouping_map = NULL;

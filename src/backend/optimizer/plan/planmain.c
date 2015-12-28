@@ -103,8 +103,9 @@ query_planner(PlannerInfo *root, List *tlist,
 	/*
 	 * Init planner lists to empty.
 	 *
-	 * NOTE: append_rel_list was set up by subquery_planner, so do not touch
-	 * here; eq_classes and minmax_aggs may contain data already, too.
+	 * NOTE: append_rel_list and colstore_rel_list were set up by
+	 * subquery_planner, so do not touch here; eq_classes and minmax_aggs may
+	 * contain data already, too.
 	 */
 	root->join_rel_list = NIL;
 	root->join_rel_hash = NULL;
@@ -127,14 +128,15 @@ query_planner(PlannerInfo *root, List *tlist,
 
 	/*
 	 * Construct RelOptInfo nodes for all base relations in query, and
-	 * indirectly for all appendrel member relations ("other rels").  This
-	 * will give us a RelOptInfo for every "simple" (non-join) rel involved in
-	 * the query.
+	 * indirectly for all appendrel member relations and column store rels
+	 * ("other rels").  This will give us a RelOptInfo for every "simple"
+	 * (non-join) rel involved in the query.
 	 *
 	 * Note: the reason we find the rels by searching the jointree and
-	 * appendrel list, rather than just scanning the rangetable, is that the
-	 * rangetable may contain RTEs for rels not actively part of the query,
-	 * for example views.  We don't want to make RelOptInfos for them.
+	 * appendrel and colstore lists, rather than just scanning the rangetable,
+	 * is that the rangetable may contain RTEs for rels not actively part of
+	 * the query, for example views.  We don't want to make RelOptInfos for
+	 * them.
 	 */
 	add_base_rels_to_query(root, (Node *) parse->jointree);
 

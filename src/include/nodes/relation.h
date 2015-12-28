@@ -232,6 +232,8 @@ typedef struct PlannerInfo
 
 	List	   *append_rel_list;	/* list of AppendRelInfos */
 
+	List	   *colstore_rel_list;	/* list of ColstoreRelInfo */
+
 	List	   *rowMarks;		/* list of PlanRowMarks */
 
 	List	   *placeholder_list;		/* list of PlaceHolderInfos */
