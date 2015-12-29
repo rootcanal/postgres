@@ -100,6 +100,7 @@ extern float4 get_func_cost(Oid funcid);
 extern float4 get_func_rows(Oid funcid);
 extern Oid	get_relname_relid(const char *relname, Oid relnamespace);
 extern char *get_rel_name(Oid relid);
+extern char *get_cstore_name(Oid relid);
 extern Oid	get_rel_namespace(Oid relid);
 extern Oid	get_rel_type_id(Oid relid);
 extern char get_rel_relkind(Oid relid);

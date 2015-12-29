@@ -25,6 +25,7 @@
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_cstore.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
@@ -1702,6 +1703,35 @@ get_rel_name(Oid relid)
 		char	   *result;
 
 		result = pstrdup(NameStr(reltup->relname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return NULL;
+}
+
+
+/*
+ * get_cstore_name
+ *		Returns the name of a given column store.
+ *
+ * Returns a palloc'd copy of the string, or NULL if no such column store.
+ *
+ * NOTE: since column store name is not unique, be wary of code that uses this
+ * for anything except preparing error messages.
+ */
+char *
+get_cstore_name(Oid relid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(CSTOREOID, ObjectIdGetDatum(relid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_cstore reltup = (Form_pg_cstore) GETSTRUCT(tp);
+		char	   *result;
+
+		result = pstrdup(NameStr(reltup->cstname));
 		ReleaseSysCache(tp);
 		return result;
 	}
