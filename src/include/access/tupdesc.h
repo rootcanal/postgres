@@ -44,6 +44,32 @@ typedef struct tupleConstr
 } TupleConstr;
 
 /*
+ * This enum describes the attribute ordering within a Tuple.
+ * A relation may have the logical column ordering vary from the actual
+ * physical (on disk) order. In some cases this can allow a smaller on-disk
+ * footprint of a tuple by reducing the padding between attributes.
+ * It is also possible for attributes of a logical relation not to be stored
+ * in the heap at all.
+ *
+ * ATTRORDER_PHYSMATCHLOGICAL:
+ * The phyiscal attribute order is the same as the logical one, and there's no
+ * off-heap attributes.
+ *
+ * ATTRORDER_OUTOFORDER:
+ * Logical attribute order does not match the physical attribute order. There
+ * are no off-heap attributes.
+ *
+ * ATTRORDER_OFFHEAPATTRS:
+ * Contains off-heap attributes and heap attributes may be out of order.
+ */
+typedef enum AttributeOrdering
+{
+	ATTRORDER_PHYSMATCHLOGICAL,
+	ATTRORDER_OUTOFORDER,
+	ATTRORDER_OFFHEAPATTRS
+} AttributeOrdering;
+
+/*
  * This struct is passed around within the backend to describe the structure
  * of tuples.  For tuples coming from on-disk relations, the information is
  * collected from the pg_attribute, pg_attrdef, and pg_constraint catalogs.
@@ -70,13 +96,16 @@ typedef struct tupleConstr
  */
 typedef struct tupleDesc
 {
-	int			natts;			/* number of attributes in the tuple */
+	int			natts;		/* number of logical attributes in the tuple */
+	int			nphyatts;	/* number of physical attributes in the tuple */
+	AttrNumber	*attrmap;	/* map of attnum indexed by attphynum-1 */
 	Form_pg_attribute *attrs;
 	/* attrs[N] is a pointer to the description of Attribute Number N+1 */
 	TupleConstr *constr;		/* constraints, or NULL if none */
 	Oid			tdtypeid;		/* composite type ID for tuple type */
 	int32		tdtypmod;		/* typmod for tuple type */
 	bool		tdhasoid;		/* tuple has oid attribute in its header */
+	AttributeOrdering tdattorder; /* Attibutes order type. See comment above */
 	int			tdrefcount;		/* reference count, or -1 if not counting */
 }	*TupleDesc;
 
@@ -111,6 +140,8 @@ extern void DecrTupleDescRefCount(TupleDesc tupdesc);
 	} while (0)
 
 extern bool equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2);
+
+extern void TupleDescCacheReset(TupleDesc desc);
 
 extern void TupleDescInitEntry(TupleDesc desc,
 				   AttrNumber attributeNumber,

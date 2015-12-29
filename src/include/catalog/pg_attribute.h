@@ -78,6 +78,12 @@ CATALOG(pg_attribute,1249) BKI_BOOTSTRAP BKI_WITHOUT_OIDS BKI_ROWTYPE_OID(75) BK
 	int16		attnum;
 
 	/*
+	 * Physical location in the heap, or 0 if attribute is not stored in
+	 * the heap.
+	 */
+	int16		attphynum;
+
+	/*
 	 * attndims is the declared number of dimensions, if an array type,
 	 * otherwise zero.
 	 */
@@ -188,28 +194,29 @@ typedef FormData_pg_attribute *Form_pg_attribute;
  * ----------------
  */
 
-#define Natts_pg_attribute				21
+#define Natts_pg_attribute				22
 #define Anum_pg_attribute_attrelid		1
 #define Anum_pg_attribute_attname		2
 #define Anum_pg_attribute_atttypid		3
 #define Anum_pg_attribute_attstattarget 4
 #define Anum_pg_attribute_attlen		5
 #define Anum_pg_attribute_attnum		6
-#define Anum_pg_attribute_attndims		7
-#define Anum_pg_attribute_attcacheoff	8
-#define Anum_pg_attribute_atttypmod		9
-#define Anum_pg_attribute_attbyval		10
-#define Anum_pg_attribute_attstorage	11
-#define Anum_pg_attribute_attalign		12
-#define Anum_pg_attribute_attnotnull	13
-#define Anum_pg_attribute_atthasdef		14
-#define Anum_pg_attribute_attisdropped	15
-#define Anum_pg_attribute_attislocal	16
-#define Anum_pg_attribute_attinhcount	17
-#define Anum_pg_attribute_attcollation	18
-#define Anum_pg_attribute_attacl		19
-#define Anum_pg_attribute_attoptions	20
-#define Anum_pg_attribute_attfdwoptions 21
+#define Anum_pg_attribute_attphynum		7
+#define Anum_pg_attribute_attndims		8
+#define Anum_pg_attribute_attcacheoff	9
+#define Anum_pg_attribute_atttypmod		10
+#define Anum_pg_attribute_attbyval		11
+#define Anum_pg_attribute_attstorage	12
+#define Anum_pg_attribute_attalign		13
+#define Anum_pg_attribute_attnotnull	14
+#define Anum_pg_attribute_atthasdef		15
+#define Anum_pg_attribute_attisdropped	16
+#define Anum_pg_attribute_attislocal	17
+#define Anum_pg_attribute_attinhcount	18
+#define Anum_pg_attribute_attcollation	19
+#define Anum_pg_attribute_attacl		20
+#define Anum_pg_attribute_attoptions	21
+#define Anum_pg_attribute_attfdwoptions 22
 
 
 /* ----------------

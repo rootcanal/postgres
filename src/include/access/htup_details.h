@@ -708,7 +708,8 @@ struct MinimalTupleData
 	)																\
 	:																\
 	(																\
-		att_isnull((attnum)-1, (tup)->t_data->t_bits) ?				\
+		att_isnull((tupleDesc)->attrs[(attnum) - 1]->attphynum-1,	\
+					(tup)->t_data->t_bits) ?						\
 		(															\
 			(*(isnull) = true),										\
 			(Datum)NULL												\
@@ -719,7 +720,38 @@ struct MinimalTupleData
 		)															\
 	)																\
 )
+
+#define fastgetlogattr(tup, attnum, tupleDesc, isnull)				\
+(																	\
+	AssertMacro((attnum) > 0),										\
+	(*(isnull) = false),											\
+	HeapTupleNoNulls(tup) ?											\
+	(																\
+		(tupleDesc)->attrs[(attnum)-1]->attcacheoff >= 0 ?			\
+		(															\
+			fetchatt((tupleDesc)->attrs[(attnum)-1],				\
+				(char *) (tup)->t_data + (tup)->t_data->t_hoff +	\
+					(tupleDesc)->attrs[(attnum)-1]->attcacheoff)	\
+		)															\
+		:															\
+			nocachegetlogattr((tup), (attnum), (tupleDesc))			\
+	)																\
+	:																\
+	(																\
+		att_isnull((attnum)-1, (tup)->t_data->t_bits) ?				\
+		(															\
+			(*(isnull) = true),										\
+			(Datum)NULL												\
+		)															\
+		:															\
+		(															\
+			nocachegetlogattr((tup), (attnum), (tupleDesc))			\
+		)															\
+	)																\
+)
+
 #else							/* defined(DISABLE_COMPLEX_MACRO) */
+
 
 extern Datum fastgetattr(HeapTuple tup, int attnum, TupleDesc tupleDesc,
 			bool *isnull);
@@ -736,16 +768,19 @@ extern Datum fastgetattr(HeapTuple tup, int attnum, TupleDesc tupleDesc,
  *		If the field in question has a NULL value, we return a zero Datum
  *		and set *isnull == true.  Otherwise, we set *isnull == false.
  *
- *		<tup> is the pointer to the heap tuple.  <attnum> is the attribute
- *		number of the column (field) caller wants.  <tupleDesc> is a
- *		pointer to the structure describing the row and all its fields.
+ *		<tup> is the pointer to the heap tuple.  <attnum> is the logical
+ *		attribute number of the column (field) caller wants. This is translated
+ *		into the phyical number internally using the tupleDesc.
+ *		<tupleDesc> is a pointer to the structure describing the row and all
+ *		its fields.
  * ----------------
  */
 #define heap_getattr(tup, attnum, tupleDesc, isnull) \
 	( \
 		((attnum) > 0) ? \
 		( \
-			((attnum) > (int) HeapTupleHeaderGetNatts((tup)->t_data)) ? \
+			((tupleDesc)->attrs[(attnum) - 1]->attphynum > \
+				(int) HeapTupleHeaderGetNatts((tup)->t_data)) ? \
 			( \
 				(*(isnull) = true), \
 				(Datum)NULL \
@@ -757,10 +792,28 @@ extern Datum fastgetattr(HeapTuple tup, int attnum, TupleDesc tupleDesc,
 			heap_getsysattr((tup), (attnum), (tupleDesc), (isnull)) \
 	)
 
+#define heap_getlogattr(tup, attnum, tupleDesc, isnull) \
+	( \
+		((attnum) > 0) ? \
+		( \
+			((attnum) > (int) HeapTupleHeaderGetNatts((tup)->t_data)) ? \
+			( \
+				(*(isnull) = true), \
+				(Datum)NULL \
+			) \
+			: \
+				fastgetlogattr((tup), (attnum), (tupleDesc), (isnull)) \
+		) \
+		: \
+			heap_getsysattr((tup), (attnum), (tupleDesc), (isnull)) \
+	)
+
 
 /* prototypes for functions in common/heaptuple.c */
 extern Size heap_compute_data_size(TupleDesc tupleDesc,
 					   Datum *values, bool *isnull);
+extern Size heap_compute_logical_data_size(TupleDesc tupleDesc,
+										   Datum *values, bool *isnull);
 extern void heap_fill_tuple(TupleDesc tupleDesc,
 				Datum *values, bool *isnull,
 				char *data, Size data_size,
@@ -768,12 +821,16 @@ extern void heap_fill_tuple(TupleDesc tupleDesc,
 extern bool heap_attisnull(HeapTuple tup, int attnum);
 extern Datum nocachegetattr(HeapTuple tup, int attnum,
 			   TupleDesc att);
+extern Datum nocachegetlogattr(HeapTuple tup, int attnum,
+			   TupleDesc att);
 extern Datum heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc,
 				bool *isnull);
 extern HeapTuple heap_copytuple(HeapTuple tuple);
 extern void heap_copytuple_with_tuple(HeapTuple src, HeapTuple dest);
 extern Datum heap_copy_tuple_as_datum(HeapTuple tuple, TupleDesc tupleDesc);
 extern HeapTuple heap_form_tuple(TupleDesc tupleDescriptor,
+				Datum *values, bool *isnull);
+extern HeapTuple heap_form_logical_tuple(TupleDesc tupleDescriptor,
 				Datum *values, bool *isnull);
 extern HeapTuple heap_modify_tuple(HeapTuple tuple,
 				  TupleDesc tupleDesc,

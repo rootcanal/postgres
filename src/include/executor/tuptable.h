@@ -168,7 +168,7 @@ extern TupleTableSlot *ExecMakeSlotContentsReadOnly(TupleTableSlot *slot);
 /* in access/common/heaptuple.c */
 extern Datum slot_getattr(TupleTableSlot *slot, int attnum, bool *isnull);
 extern void slot_getallattrs(TupleTableSlot *slot);
-extern void slot_getsomeattrs(TupleTableSlot *slot, int attnum);
+extern void slot_getsomeattrs(TupleTableSlot *slot, int phynum);
 extern bool slot_attisnull(TupleTableSlot *slot, int attnum);
 
 #endif   /* TUPTABLE_H */

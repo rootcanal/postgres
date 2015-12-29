@@ -484,6 +484,8 @@ RelationBuildTupleDesc(Relation relation)
 	TupleConstr *constr;
 	AttrDefault *attrdef = NULL;
 	int			ndef = 0;
+	int			nphyatts = 0;
+	AttributeOrdering	attorder;
 
 	/* copy some fields from pg_class row to rd_att */
 	relation->rd_att->tdtypeid = relation->rd_rel->reltype;
@@ -525,6 +527,17 @@ RelationBuildTupleDesc(Relation relation)
 	 */
 	need = relation->rd_rel->relnatts;
 
+	/*
+	 * We maintain a enum to indicate if the logical column order matches the
+	 * physical on-disk column order.
+	 *
+	 * Initially we'll assume the physical and logical orders match. In the
+	 * loop below we'll adjust the value as required depending on what we
+	 * discover about the column ordering.
+	 */
+	attorder = ATTRORDER_PHYSMATCHLOGICAL;
+
+	MemSet(relation->rd_att->attrmap, 0, need * sizeof(AttrNumber));
 	while (HeapTupleIsValid(pg_attribute_tuple = systable_getnext(pg_attribute_scan)))
 	{
 		Form_pg_attribute attp;
@@ -544,6 +557,31 @@ RelationBuildTupleDesc(Relation relation)
 		if (attp->attnotnull)
 			constr->has_not_null = true;
 
+		/*
+		 * If we find any attributes where the the logical order does not match
+		 * the phyiscal order, then we'll mark the TupleDesc with the
+		 * appropriate AttributeOrdering.
+		 */
+		if (attp->attnum != attp->attphynum)
+		{
+			if (attp->attphynum == InvalidAttrNumber)
+				attorder = ATTRORDER_OFFHEAPATTRS;
+
+			else if (attorder == ATTRORDER_PHYSMATCHLOGICAL)
+				attorder = ATTRORDER_OUTOFORDER;
+		}
+
+		if (attp->attphynum != InvalidAttrNumber)
+		{
+			if (attp->attphynum < 0 ||
+				attp->attphynum > relation->rd_rel->relnatts)
+				elog(ERROR, "invalid physical attribute number %d for %s",
+					 attp->attphynum, RelationGetRelationName(relation));
+
+			relation->rd_att->attrmap[attp->attphynum - 1] = attp->attnum;
+			nphyatts++;
+		}
+
 		if (attp->atthasdef)
 		{
 			if (attrdef == NULL)
@@ -559,6 +597,9 @@ RelationBuildTupleDesc(Relation relation)
 		if (need == 0)
 			break;
 	}
+
+	relation->rd_att->nphyatts = nphyatts;
+	relation->rd_att->tdattorder = attorder;
 
 	/*
 	 * end the scan and close the attribute relation

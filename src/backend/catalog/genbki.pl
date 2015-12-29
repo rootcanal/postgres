@@ -217,6 +217,7 @@ foreach my $catname (@{ $catalogs->{names} })
 				$attnum++;
 				my $row = emit_pgattr_row($table_name, $attr, $priornotnull);
 				$row->{attnum}        = $attnum;
+				$row->{attphynum}     = $attnum;
 				$row->{attstattarget} = '-1';
 				$priornotnull &= ($row->{attnotnull} eq 't');
 
@@ -254,6 +255,7 @@ foreach my $catname (@{ $catalogs->{names} })
 					$attnum--;
 					my $row = emit_pgattr_row($table_name, $attr, 1);
 					$row->{attnum}        = $attnum;
+					$row->{attphynum}     = $attnum;
 					$row->{attstattarget} = '0';
 
 					# some catalogs don't have oids

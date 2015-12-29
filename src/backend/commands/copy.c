@@ -298,7 +298,7 @@ static void CopyFromInsertBatch(CopyState cstate, EState *estate,
 					ResultRelInfo *resultRelInfo, TupleTableSlot *myslot,
 					BulkInsertState bistate,
 					int nBufferedTuples, HeapTuple *bufferedTuples,
-					int firstBufferedLineNo);
+					int firstBufferedLineNo, TupleDesc tupDesc);
 static bool CopyReadLine(CopyState cstate);
 static bool CopyReadLineText(CopyState cstate);
 static int	CopyReadAttributesText(CopyState cstate);
@@ -2423,7 +2423,24 @@ CopyFrom(CopyState cstate)
 			break;
 
 		/* And now we can form the input tuple. */
-		tuple = heap_form_tuple(tupDesc, values, nulls);
+		switch (tupDesc->tdattorder)
+		{
+			/*
+			 * If physical matches logical then we'll just form a logical tuple
+			 * as the function does not have to perform any translation between
+			 * logical and physical orders. Likewise if there are any off-heap
+			 * attributes, as in this case we can't form a physical tuple as we
+			 * would end up throwing away the off-heap attributes.
+			 */
+			case ATTRORDER_PHYSMATCHLOGICAL:
+			case ATTRORDER_OFFHEAPATTRS:
+				tuple = heap_form_logical_tuple(tupDesc, values, nulls);
+				break;
+
+			/* Contains out of outer attributes */
+			default:
+				tuple = heap_form_tuple(tupDesc, values, nulls);
+		}
 
 		if (loaded_oid != InvalidOid)
 			HeapTupleSetOid(tuple, loaded_oid);
@@ -2481,7 +2498,7 @@ CopyFrom(CopyState cstate)
 					CopyFromInsertBatch(cstate, estate, mycid, hi_options,
 										resultRelInfo, myslot, bistate,
 										nBufferedTuples, bufferedTuples,
-										firstBufferedLineNo);
+										firstBufferedLineNo, tupDesc);
 					nBufferedTuples = 0;
 					bufferedTuplesSize = 0;
 				}
@@ -2519,7 +2536,7 @@ CopyFrom(CopyState cstate)
 		CopyFromInsertBatch(cstate, estate, mycid, hi_options,
 							resultRelInfo, myslot, bistate,
 							nBufferedTuples, bufferedTuples,
-							firstBufferedLineNo);
+							firstBufferedLineNo, tupDesc);
 
 	/* Done, clean up */
 	error_context_stack = errcallback.previous;
@@ -2570,7 +2587,7 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 					int hi_options, ResultRelInfo *resultRelInfo,
 					TupleTableSlot *myslot, BulkInsertState bistate,
 					int nBufferedTuples, HeapTuple *bufferedTuples,
-					int firstBufferedLineNo)
+					int firstBufferedLineNo, TupleDesc tupDesc)
 {
 	MemoryContext oldcontext;
 	int			i;

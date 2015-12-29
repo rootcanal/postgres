@@ -862,6 +862,10 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	if (attr->attisdropped)
 		return NULL;
 
+	/* Don't attempt to analyze off-heap attributes */
+	if (attr->attphynum == InvalidAttrNumber)
+		return NULL;
+
 	/* Don't analyze column if user has specified not to */
 	if (attr->attstattarget == 0)
 		return NULL;

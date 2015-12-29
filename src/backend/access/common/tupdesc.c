@@ -41,7 +41,9 @@ CreateTemplateTupleDesc(int natts, bool hasoid)
 {
 	TupleDesc	desc;
 	char	   *stg;
-	int			attroffset;
+	int			attroffset1;
+	int			attroffset2;
+	int			attroffset3;
 
 	/*
 	 * sanity checks
@@ -49,8 +51,9 @@ CreateTemplateTupleDesc(int natts, bool hasoid)
 	AssertArg(natts >= 0);
 
 	/*
-	 * Allocate enough memory for the tuple descriptor, including the
-	 * attribute rows, and set up the attribute row pointers.
+	 * Allocate enough memory for the tuple descriptor, including the attribute
+	 * physical order to logical order map and attribute rows, and set up the
+	 * attribute row pointers.
 	 *
 	 * Note: we assume that sizeof(struct tupleDesc) is a multiple of the
 	 * struct pointer alignment requirement, and hence we don't need to insert
@@ -61,37 +64,54 @@ CreateTemplateTupleDesc(int natts, bool hasoid)
 	 * descriptors, so we only need ATTRIBUTE_FIXED_PART_SIZE space per attr.
 	 * That might need alignment padding, however.
 	 */
-	attroffset = sizeof(struct tupleDesc) + natts * sizeof(Form_pg_attribute);
-	attroffset = MAXALIGN(attroffset);
-	stg = palloc(attroffset + natts * MAXALIGN(ATTRIBUTE_FIXED_PART_SIZE));
+
+	attroffset1 = MAXALIGN(sizeof(struct tupleDesc));
+	attroffset2 = natts * sizeof(AttrNumber);
+	attroffset2 = MAXALIGN(attroffset2);
+	attroffset3 = natts * sizeof(Form_pg_attribute);
+	attroffset3 = MAXALIGN(attroffset3);
+	stg = palloc(attroffset1 + attroffset2 + attroffset3 +
+				 natts * MAXALIGN(ATTRIBUTE_FIXED_PART_SIZE));
 	desc = (TupleDesc) stg;
 
 	if (natts > 0)
 	{
+		AttrNumber		  *attrmap;
 		Form_pg_attribute *attrs;
 		int			i;
 
-		attrs = (Form_pg_attribute *) (stg + sizeof(struct tupleDesc));
-		desc->attrs = attrs;
-		stg += attroffset;
+		stg += attroffset1;
+		attrmap = (AttrNumber *) stg;
+		stg += attroffset2;
+		attrs = (Form_pg_attribute *) stg;
+		stg += attroffset3;
+
 		for (i = 0; i < natts; i++)
 		{
 			attrs[i] = (Form_pg_attribute) stg;
+			attrmap[i] = i + 1;		// is this necessary?
 			stg += MAXALIGN(ATTRIBUTE_FIXED_PART_SIZE);
 		}
+		desc->attrmap = attrmap;
+		desc->attrs = attrs;
 	}
 	else
+	{
+		desc->attrmap = NULL;
 		desc->attrs = NULL;
+	}
 
 	/*
 	 * Initialize other fields of the tupdesc.
 	 */
 	desc->natts = natts;
+	desc->nphyatts = natts;
 	desc->constr = NULL;
 	desc->tdtypeid = RECORDOID;
 	desc->tdtypmod = -1;
 	desc->tdhasoid = hasoid;
 	desc->tdrefcount = -1;		/* assume not reference-counted */
+	desc->tdattorder = ATTRORDER_PHYSMATCHLOGICAL;
 
 	return desc;
 }
@@ -111,6 +131,7 @@ TupleDesc
 CreateTupleDesc(int natts, bool hasoid, Form_pg_attribute *attrs)
 {
 	TupleDesc	desc;
+	int i;
 
 	/*
 	 * sanity checks
@@ -118,13 +139,22 @@ CreateTupleDesc(int natts, bool hasoid, Form_pg_attribute *attrs)
 	AssertArg(natts >= 0);
 
 	desc = (TupleDesc) palloc(sizeof(struct tupleDesc));
+	desc->attrmap = (AttrNumber *) palloc(natts * sizeof(AttrNumber));
 	desc->attrs = attrs;
 	desc->natts = natts;
+	desc->nphyatts = natts;
 	desc->constr = NULL;
 	desc->tdtypeid = RECORDOID;
 	desc->tdtypmod = -1;
 	desc->tdhasoid = hasoid;
 	desc->tdrefcount = -1;		/* assume not reference-counted */
+
+	/* XXX is this really necessary, or a good idea? */
+	for (i = 0; i < natts; i++)
+	{
+		Assert(attrs[i]->attphynum <= natts);
+		desc->attrmap[attrs[i]->attphynum - 1] = i + 1;
+	}
 
 	return desc;
 }
@@ -150,9 +180,11 @@ CreateTupleDescCopy(TupleDesc tupdesc)
 		desc->attrs[i]->attnotnull = false;
 		desc->attrs[i]->atthasdef = false;
 	}
+	memcpy(desc->attrmap, tupdesc->attrmap, tupdesc->natts * sizeof(AttrNumber));
 
 	desc->tdtypeid = tupdesc->tdtypeid;
 	desc->tdtypmod = tupdesc->tdtypmod;
+	desc->nphyatts = tupdesc->nphyatts;
 
 	return desc;
 }
@@ -175,6 +207,7 @@ CreateTupleDescCopyConstr(TupleDesc tupdesc)
 	{
 		memcpy(desc->attrs[i], tupdesc->attrs[i], ATTRIBUTE_FIXED_PART_SIZE);
 	}
+	memcpy(desc->attrmap, tupdesc->attrmap, tupdesc->natts * sizeof(AttrNumber));
 
 	if (constr)
 	{
@@ -256,6 +289,9 @@ TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
 	/* since we're not copying constraints or defaults, clear these */
 	dst->attrs[dstAttno - 1]->attnotnull = false;
 	dst->attrs[dstAttno - 1]->atthasdef = false;
+
+	/* Update the attrmap */
+	dst->attrmap[dstAttno - 1] = dstAttno;
 }
 
 /*
@@ -386,6 +422,8 @@ equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2)
 			return false;
 		if (attr1->attlen != attr2->attlen)
 			return false;
+		if (attr1->attphynum != attr2->attphynum)
+			return false;
 		if (attr1->attndims != attr2->attndims)
 			return false;
 		if (attr1->atttypmod != attr2->atttypmod)
@@ -474,6 +512,20 @@ equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2)
 }
 
 /*
+ * TupleDescCacheReset
+ *		Resets cached offsets of TupleDesc back to their initial values.
+ */
+void
+TupleDescCacheReset(TupleDesc desc)
+{
+	int natts = desc->natts;
+	int i;
+
+	for (i = 0; i < natts; i++)
+		desc->attrs[i]->attcacheoff = -1;
+}
+
+/*
  * TupleDescInitEntry
  *		This function initializes a single attribute structure in
  *		a previously allocated tuple descriptor.
@@ -529,6 +581,7 @@ TupleDescInitEntry(TupleDesc desc,
 	att->atttypmod = typmod;
 
 	att->attnum = attributeNumber;
+	att->attphynum = attributeNumber;
 	att->attndims = attdim;
 
 	att->attnotnull = false;

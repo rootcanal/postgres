@@ -1064,7 +1064,8 @@ fastgetattr(HeapTuple tup, int attnum, TupleDesc tupleDesc,
 			  )
 			 :
 			 (
-			  att_isnull((attnum) - 1, (tup)->t_data->t_bits) ?
+			  att_isnull((tupleDesc)->attrs[(attnum) - 1]->attphynum - 1,
+						(tup)->t_data->t_bits) ?
 			  (
 			   (*(isnull) = true),
 			   (Datum) NULL
