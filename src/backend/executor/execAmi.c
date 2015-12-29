@@ -21,6 +21,7 @@
 #include "executor/nodeBitmapHeapscan.h"
 #include "executor/nodeBitmapIndexscan.h"
 #include "executor/nodeBitmapOr.h"
+#include "executor/nodeColumnStorescan.h"
 #include "executor/nodeCtescan.h"
 #include "executor/nodeCustom.h"
 #include "executor/nodeForeignscan.h"
@@ -214,6 +215,10 @@ ExecReScan(PlanState *node)
 			ExecReScanCustomScan((CustomScanState *) node);
 			break;
 
+		case T_ColumnStoreScanState:
+			ExecReScanColumnStoreScan((ColumnStoreScanState *) node);
+			break;
+
 		case T_NestLoopState:
 			ExecReScanNestLoop((NestLoopState *) node);
 			break;
@@ -308,6 +313,10 @@ ExecMarkPos(PlanState *node)
 			ExecCustomMarkPos((CustomScanState *) node);
 			break;
 
+		case T_ColumnStoreScanState:
+			ExecColumnStoreScanMarkPos((ColumnStoreScanState *) node);
+			break;
+
 		case T_MaterialState:
 			ExecMaterialMarkPos((MaterialState *) node);
 			break;
@@ -357,6 +366,10 @@ ExecRestrPos(PlanState *node)
 			ExecCustomRestrPos((CustomScanState *) node);
 			break;
 
+		case T_ColumnStoreScanState:
+			ExecColumnStoreScanRestrPos((ColumnStoreScanState *) node);
+			break;
+
 		case T_MaterialState:
 			ExecMaterialRestrPos((MaterialState *) node);
 			break;
@@ -396,6 +409,10 @@ ExecSupportsMarkRestore(Path *pathnode)
 		case T_IndexOnlyScan:
 		case T_Material:
 		case T_Sort:
+			return true;
+
+		case T_ColumnStoreScan:
+			/* XXX perhaps check the API methods are not NULL here? */
 			return true;
 
 		case T_CustomScan:
@@ -507,6 +524,7 @@ ExecSupportsBackwardScan(Plan *node)
 			}
 			return false;
 
+		case T_ColumnStoreScan:
 		case T_Material:
 		case T_Sort:
 			/* these don't evaluate tlist */
