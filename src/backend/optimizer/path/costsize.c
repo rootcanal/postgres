@@ -373,6 +373,37 @@ cost_gather(GatherPath *path, PlannerInfo *root,
 }
 
 /*
+ * cost_colstore_scan
+ *	  Determines and returns the cost of scanning a column store.
+ *
+ * 'baserel' is the column store relation to be scanned
+ * 'param_info' is the ParamPathInfo if this is a parameterized path, else NULL
+ */
+void
+cost_colstore_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
+				   ParamPathInfo *param_info)
+{
+	Cost	run_cost = 0;
+	Cost	startup_cost = 0;
+	double	spc_seq_page_cost;
+
+	/* Should only be applied to base relations */
+	Assert(baserel->relid > 0);
+	Assert(baserel->rtekind == RTE_RELATION);
+
+	path->rows = baserel->tuples;
+
+	get_tablespace_page_costs(baserel->reltablespace,
+							  NULL,
+							  &spc_seq_page_cost);
+
+	run_cost = spc_seq_page_cost * baserel->pages;
+
+	path->startup_cost = startup_cost;
+	path->total_cost = startup_cost + run_cost;
+}
+
+/*
  * cost_index
  *	  Determines and returns the cost of scanning a relation using an index.
  *

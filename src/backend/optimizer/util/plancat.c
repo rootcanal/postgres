@@ -1011,6 +1011,7 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 			*tuples = 1;
 			*allvisfrac = 0;
 			break;
+		case RELKIND_COLUMN_STORE:
 		case RELKIND_FOREIGN_TABLE:
 			/* Just use whatever's in pg_class */
 			*pages = rel->rd_rel->relpages;

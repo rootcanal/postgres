@@ -90,6 +90,7 @@ extern ForeignPath *create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 						Relids required_outer,
 						Path *fdw_outerpath,
 						List *fdw_private);
+extern Path *create_colstore_scan_path(PlannerInfo *root, RelOptInfo *rel);
 
 extern Relids calc_nestloop_required_outer(Path *outer_path, Path *inner_path);
 extern Relids calc_non_nestloop_required_outer(Path *outer_path, Path *inner_path);

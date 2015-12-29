@@ -78,6 +78,10 @@ static void set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 static bool function_rte_parallel_ok(RangeTblEntry *rte);
 static void set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					   RangeTblEntry *rte);
+static void set_colstore_rel_size(PlannerInfo *root, RelOptInfo *rel,
+					  RangeTblEntry *rte);
+static void set_colstore_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
+						  RangeTblEntry *rte);
 static void set_tablesample_rel_size(PlannerInfo *root, RelOptInfo *rel,
 						 RangeTblEntry *rte);
 static void set_tablesample_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
@@ -344,6 +348,11 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 					/* Sampled relation */
 					set_tablesample_rel_size(root, rel, rte);
 				}
+				else if (rte->relkind == RELKIND_COLUMN_STORE)
+				{
+					/* column store */
+					set_colstore_rel_size(root, rel, rte);
+				}
 				else
 				{
 					/* Plain relation */
@@ -420,6 +429,11 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				{
 					/* Sampled relation */
 					set_tablesample_rel_pathlist(root, rel, rte);
+				}
+				else if (rte->relkind == RELKIND_COLUMN_STORE)
+				{
+					/* column store */
+					set_colstore_rel_pathlist(root, rel, rte);
 				}
 				else
 				{
@@ -633,6 +647,26 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 	/* Consider TID scans */
 	create_tidscan_paths(root, rel);
+}
+
+static void
+set_colstore_rel_size(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+{
+	/* XXX temporary (?) hack */
+	set_plain_rel_size(root, rel, rte);
+}
+
+static void
+set_colstore_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+{
+	/* consider column store scan path */
+	add_path(rel, create_colstore_scan_path(root, rel));
+
+	/*
+	 * XXX The other path(s) we should consider is a column scan that uses some
+	 * qual from WHERE etc to produce CTIDs, which parametrizes the heap scan.
+	 * We don't have that yet.
+	 */
 }
 
 /*

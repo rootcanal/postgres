@@ -1823,6 +1823,26 @@ create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * create_colstore_scan_path
+ *		Creates a path corresponding to a column store scan,
+ *		returning the pathnode.
+ */
+Path *
+create_colstore_scan_path(PlannerInfo *root, RelOptInfo *rel)
+{
+	Path	   *pathnode = makeNode(Path);
+
+	pathnode->pathtype = T_ColumnStoreScan;
+	pathnode->parent = rel;
+	pathnode->param_info = NULL;
+	pathnode->pathkeys = NIL;	/* colstore scan has unordered results */
+
+	cost_colstore_scan(pathnode, root, rel, pathnode->param_info);
+
+	return pathnode;
+}
+
+/*
  * calc_nestloop_required_outer
  *	  Compute the required_outer set for a nestloop join path
  *

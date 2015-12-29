@@ -86,6 +86,10 @@ static ForeignScan *create_foreignscan_plan(PlannerInfo *root, ForeignPath *best
 static CustomScan *create_customscan_plan(PlannerInfo *root,
 					   CustomPath *best_path,
 					   List *tlist, List *scan_clauses);
+static ColumnStoreScan *create_colstore_scan_plan(PlannerInfo *root,
+												  Path *best_path,
+												  List *tlist,
+												  List *scan_clauses);
 static NestLoop *create_nestloop_plan(PlannerInfo *root, NestPath *best_path,
 					 Plan *outer_plan, Plan *inner_plan);
 static MergeJoin *create_mergejoin_plan(PlannerInfo *root, MergePath *best_path,
@@ -136,6 +140,8 @@ static CteScan *make_ctescan(List *qptlist, List *qpqual,
 			 Index scanrelid, int ctePlanId, int cteParam);
 static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 				   Index scanrelid, int wtParam);
+static ColumnStoreScan *make_colstore_scan(List *targetlist, List *qpqual,
+										   Index scanrelid);
 static BitmapAnd *make_bitmap_and(List *bitmapplans);
 static BitmapOr *make_bitmap_or(List *bitmapplans);
 static NestLoop *make_nestloop(List *tlist,
@@ -253,6 +259,7 @@ create_plan_recurse(PlannerInfo *root, Path *best_path)
 		case T_WorkTableScan:
 		case T_ForeignScan:
 		case T_CustomScan:
+		case T_ColumnStoreScan:
 			plan = create_scan_plan(root, best_path);
 			break;
 		case T_HashJoin:
@@ -445,6 +452,13 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 												   (CustomPath *) best_path,
 												   tlist,
 												   scan_clauses);
+			break;
+
+		case T_ColumnStoreScan:
+			plan = (Plan *) create_colstore_scan_plan(root,
+													  best_path,
+													  tlist,
+													  scan_clauses);
 			break;
 
 		default:
@@ -2295,6 +2309,43 @@ create_customscan_plan(PlannerInfo *root, CustomPath *best_path,
 	return cplan;
 }
 
+/*
+ * create_colstore_scan_plan
+ *	  Create a ColumnStoreScan plan for 'best_path'.
+ *
+ *	  Returns a Plan node.
+ */
+static ColumnStoreScan *
+create_colstore_scan_plan(PlannerInfo *root, Path *best_path, List *tlist,
+						  List *scan_clauses)
+{
+	ColumnStoreScan	   *scan_plan;
+	Index				scan_relid = best_path->parent->relid;
+
+	/* it should be a base rel... */
+	Assert(scan_relid > 0);
+	Assert(best_path->parent->rtekind == RTE_RELATION);
+
+	/* Sort clauses into best execution order */
+	scan_clauses = order_qual_clauses(root, scan_clauses);
+
+	/* Reduce RestrictInfo list to bare expressions; ignore pseudoconstants */
+	scan_clauses = extract_actual_clauses(scan_clauses, false);
+
+	/* Replace any outer-relation variables with nestloop params */
+	if (best_path->param_info)
+	{
+		scan_clauses = (List *)
+			replace_nestloop_params(root, (Node *) scan_clauses);
+	}
+
+	scan_plan = make_colstore_scan(tlist, scan_clauses, scan_relid);
+
+	copy_generic_path_info(&scan_plan->scan.plan, (Path *) best_path);
+
+	return scan_plan;
+}
+
 
 /*****************************************************************************
  *
@@ -3802,6 +3853,22 @@ make_foreignscan(List *qptlist,
 	node->fs_relids = NULL;
 	/* fsSystemCol will be filled in by create_foreignscan_plan */
 	node->fsSystemCol = false;
+
+	return node;
+}
+
+static ColumnStoreScan *
+make_colstore_scan(List *targetlist, List *qpqual, Index scanrelid)
+{
+	ColumnStoreScan	   *node = makeNode(ColumnStoreScan);
+	Plan	   *plan = &node->scan.plan;
+
+	/* cost should be inserted by caller */
+	plan->targetlist = targetlist;
+	plan->qual = qpqual;
+	plan->lefttree = NULL;
+	plan->righttree = NULL;
+	node->scan.scanrelid = scanrelid;
 
 	return node;
 }
