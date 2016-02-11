@@ -20,12 +20,16 @@
  *		with the XLogRec* macros and functions. You can also decode a
  *		record that's already constructed in memory, without reading from
  *		disk, by calling the DecodeXLogRecord() function.
+ *
+ * 		The xlogreader is compiled as both front-end and backend code so
+ * 		it may not use elog, server-defined static variables, etc.
  *-------------------------------------------------------------------------
  */
 #ifndef XLOGREADER_H
 #define XLOGREADER_H
 
 #include "access/xlogrecord.h"
+#include "nodes/pg_list.h"
 
 typedef struct XLogReaderState XLogReaderState;
 
@@ -139,25 +143,45 @@ struct XLogReaderState
 	 * ----------------------------------------
 	 */
 
-	/* Buffer for currently read page (XLOG_BLCKSZ bytes) */
+	/*
+	 * Buffer for currently read page (XLOG_BLCKSZ bytes, valid up to
+	 * at least readLen bytes)
+	 */
 	char	   *readBuf;
 
-	/* last read segment, segment offset, read length, TLI */
+	/*
+	 * last read segment, segment offset, read length, TLI for
+	 * data currently in readBuf.
+	 */
 	XLogSegNo	readSegNo;
 	uint32		readOff;
 	uint32		readLen;
 	TimeLineID	readPageTLI;
 
-	/* beginning of last page read, and its TLI  */
+	/*
+	 * beginning of prior page read, and its TLI. Doesn't
+	 * necessarily correspond to what's in readBuf, used for
+	 * timeline sanity checks.
+	 */
 	XLogRecPtr	latestPagePtr;
 	TimeLineID	latestPageTLI;
 
 	/* beginning of the WAL record being read. */
 	XLogRecPtr	currRecPtr;
+	/* timeline to read it from, 0 if a lookup is required */
+	TimeLineID  currTLI;
+	/*
+	 * Endpoint of timeline in currTLI if it's historical or
+	 * InvalidXLogRecPtr if currTLI is the current timeline.
+	 */
+	XLogRecPtr	currTLIValidUntil;
 
 	/* Buffer for current ReadRecord result (expandable) */
 	char	   *readRecordBuf;
 	uint32		readRecordBufSize;
+
+	/* cached timeline history */
+	List	   *timelineHistory;
 
 	/* Buffer to hold error message */
 	char	   *errormsg_buf;
@@ -173,6 +197,9 @@ extern void XLogReaderFree(XLogReaderState *state);
 /* Read the next XLog record. Returns NULL on end-of-WAL or failure */
 extern struct XLogRecord *XLogReadRecord(XLogReaderState *state,
 			   XLogRecPtr recptr, char **errormsg);
+
+/* Flush any cached page */
+extern void XLogReaderInvalCache(XLogReaderState *state);
 
 #ifdef FRONTEND
 extern XLogRecPtr XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr);

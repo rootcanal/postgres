@@ -10,6 +10,9 @@
  *
  * NOTES
  *		See xlogreader.h for more notes on this facility.
+ *
+ * 		The xlogreader is compiled as both front-end and backend code so
+ * 		it may not use elog, server-defined static variables, etc.
  *-------------------------------------------------------------------------
  */
 
@@ -116,6 +119,9 @@ XLogReaderAllocate(XLogPageReadCB pagereadfunc, void *private_data)
 		return NULL;
 	}
 
+	/* Will be loaded on first read */
+	state->timelineHistory = NULL;
+
 	return state;
 }
 
@@ -135,6 +141,13 @@ XLogReaderFree(XLogReaderState *state)
 	pfree(state->errormsg_buf);
 	if (state->readRecordBuf)
 		pfree(state->readRecordBuf);
+#ifdef FRONTEND
+	/* FE code doesn't use this and we can't list_free_deep on FE */
+	Assert(state->timelineHistory == NULL);
+#else
+	if (state->timelineHistory)
+		list_free_deep(state->timelineHistory);
+#endif
 	pfree(state->readBuf);
 	pfree(state);
 }
@@ -208,9 +221,11 @@ XLogReadRecord(XLogReaderState *state, XLogRecPtr RecPtr, char **errormsg)
 
 	if (RecPtr == InvalidXLogRecPtr)
 	{
+		/* No explicit start point, read the record after the one we just read */
 		RecPtr = state->EndRecPtr;
 
 		if (state->ReadRecPtr == InvalidXLogRecPtr)
+			/* allow readPageTLI to go backward */
 			randAccess = true;
 
 		/*
@@ -223,6 +238,8 @@ XLogReadRecord(XLogReaderState *state, XLogRecPtr RecPtr, char **errormsg)
 	else
 	{
 		/*
+		 * Caller supplied a position to start at.
+		 *
 		 * In this case, the passed-in record pointer should already be
 		 * pointing to a valid record starting position.
 		 */
@@ -309,8 +326,9 @@ XLogReadRecord(XLogReaderState *state, XLogRecPtr RecPtr, char **errormsg)
 		/* XXX: more validation should be done here */
 		if (total_len < SizeOfXLogRecord)
 		{
-			report_invalid_record(state, "invalid record length at %X/%X",
-								  (uint32) (RecPtr >> 32), (uint32) RecPtr);
+			report_invalid_record(state, "invalid record length at %X/%X: wanted %lu, got %u",
+								  (uint32) (RecPtr >> 32), (uint32) RecPtr,
+								  SizeOfXLogRecord, total_len);
 			goto err;
 		}
 		gotheader = false;
@@ -466,9 +484,7 @@ err:
 	 * Invalidate the xlog page we've cached. We might read from a different
 	 * source after failure.
 	 */
-	state->readSegNo = 0;
-	state->readOff = 0;
-	state->readLen = 0;
+	XLogReaderInvalCache(state);
 
 	if (state->errormsg_buf[0] != '\0')
 		*errormsg = state->errormsg_buf;
@@ -599,9 +615,9 @@ ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
 {
 	if (record->xl_tot_len < SizeOfXLogRecord)
 	{
-		report_invalid_record(state,
-							  "invalid record length at %X/%X",
-							  (uint32) (RecPtr >> 32), (uint32) RecPtr);
+		report_invalid_record(state, "invalid record length at %X/%X: wanted %lu, got %u",
+							  (uint32) (RecPtr >> 32), (uint32) RecPtr,
+							  SizeOfXLogRecord, record->xl_tot_len);
 		return false;
 	}
 	if (record->xl_rmid > RM_MAX_ID)
@@ -1336,4 +1352,15 @@ RestoreBlockImage(XLogReaderState *record, uint8 block_id, char *page)
 	}
 
 	return true;
+}
+
+/*
+ * Invalidate the xlog reader's cached page to force a re-read
+ */
+void
+XLogReaderInvalCache(XLogReaderState *state)
+{
+	state->readSegNo = 0;
+	state->readOff = 0;
+	state->readLen = 0;
 }
