@@ -4,6 +4,7 @@
  *
  * Copyright (c) 2012-2016, PostgreSQL Global Development Group
  *
+ * src/include/replication/slot.h
  *-------------------------------------------------------------------------
  */
 #ifndef SLOT_H

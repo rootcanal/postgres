@@ -859,7 +859,8 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
      <xref linkend="functions-recovery-info-table"> for details).
      The last WAL receive location in the standby is also displayed in the
      process status of the WAL receiver process, displayed using the
-     <command>ps</> command (see <xref linkend="monitoring-ps"> for details).
+     <command>ps</> command (see <xref linkend="monitoring-ps"> for details)
+     and in the <literal>pg_stat_replication</literal> view.
     </para>
     <para>
      You can retrieve a list of WAL sender processes via the
@@ -871,10 +872,15 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
      <function>pg_last_xlog_receive_location</> on the standby might indicate
      network delay, or that the standby is under heavy load.
     </para>
+    <para>
+     Compare xlog locations and measure lag using
+     <link linkend="functions-admin-backup"><function>pg_xlog_location_diff(...)</function></link>
+     in a query over <literal>pg_stat_replication</literal>.
+    </para>
    </sect3>
   </sect2>
 
-  <sect2 id="streaming-replication-slots">
+  <sect2 id="streaming-replication-slots" xreflabel="Replication slots">
    <title>Replication Slots</title>
    <indexterm>
     <primary>replication slot</primary>
@@ -885,7 +891,10 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
     not remove WAL segments until they have been received by all standbys,
     and that the master does not remove rows which could cause a
     <link linkend="hot-standby-conflict">recovery conflict</> even when the
-    standby is disconnected.
+    standby is disconnected. They allow clients to receive a stream of
+    changes in in ordered, consistent manner - either raw WAL from a physical
+    replication slot or a logical stream of row changes from a
+    <link linkend="logicaldecoding-slots">logical replication slot</link>.
    </para>
    <para>
     In lieu of using replication slots, it is possible to prevent the removal
@@ -905,6 +914,17 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
     protection during any time period when the standby is not connected,
     and the latter often needs to be set to a high value to provide adequate
     protection.  Replication slots overcome these disadvantages.
+   </para>
+   <para>
+    Because replication slots cause the server to retain transaction logs
+    in <filename>pg_xlog</filename> it is important to monitor how far slots
+    are lagging behind the master in order to prevent the disk from filling
+    up and interrupting the master's operation. A query like:
+    <programlisting>
+      SELECT *, pg_xlog_location_diff(pg_current_xlog_location(), restart_lsn) AS lag_bytes
+      FROM pg_replication_slots;
+    </programlisting>
+    will provide an indication of how far a slot is lagging.
    </para>
    <sect3 id="streaming-replication-slots-manipulation">
     <title>Querying and manipulating replication slots</title>
@@ -949,6 +969,47 @@ primary_slot_name = 'node_a_slot'
 </programlisting>
     </para>
    </sect3>
+
+   <sect3 id="streaming-replication-slots-failover" xreflabel="Failover slots">
+     <title>Failover slots</title>
+
+     <para>
+      Normally a replication slot is not preserved across backup and restore
+      (such as by <application>pg_basebackup</application>) and is not
+      replicated to standbys. Slots are <emphasis>automatically
+      dropped</emphasis> when starting up as a streaming replica or in archive
+      recovery (PITR) mode.
+     </para>
+
+     <para>
+      To make it possible to for an application to consistently follow
+      failover when a replica is promoted to a new master a slot may be
+      created as a <emphasis>failover slot</emphasis>. A failover slot may
+      only be created, replayed from or dropped on a master server. Changes to
+      the slot are written to WAL and replicated to standbys. When a standby
+      is promoted applications may connect to the slot on the standby and
+      resume replay from it at a consistent point, as if it was the original
+      master. Failover slots may not be used to replay from a standby before
+      promotion.
+     </para>
+
+     <para>
+      Non-failover slots may be created on and used from a replica. This is
+      currently limited to physical slots as logical decoding is not supported
+      on replica server.
+     </para>
+
+     <para>
+      When a failover slot created on the master has the same name as a
+      non-failover slot on a replica server the non-failover slot will be
+      automatically dropped. Any client currently connected will be
+      disconnected with an error indicating a conflict with recovery. It
+      is strongly recommended that you avoid creating failover slots with
+      the same name as slots on replicas.
+     </para>
+
+   </sect3>
+
   </sect2>
 
   <sect2 id="cascading-replication">

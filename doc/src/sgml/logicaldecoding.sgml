@@ -12,15 +12,17 @@
 
   <para>
    Changes are sent out in streams identified by logical replication slots.
-   Each stream outputs each change exactly once.
+   Each stream outputs each change once, though repeats are possible after a
+   server crash.
   </para>
 
   <para>
    The format in which those changes are streamed is determined by the output
-   plugin used.  An example plugin is provided in the PostgreSQL distribution.
-   Additional plugins can be
-   written to extend the choice of available formats without modifying any
-   core code.
+   plugin used.  An example plugin (test_decoding) is provided in the
+   PostgreSQL distribution.  Additional plugins can be written to extend the
+   choice of available formats without modifying any core code.
+  </para>
+  <para>
    Every output plugin has access to each individual new row produced
    by <command>INSERT</command> and the new row version created
    by <command>UPDATE</command>.  Availability of old row versions for
@@ -192,7 +194,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     </para>
    </sect2>
 
-   <sect2>
+   <sect2 id="logicaldecoding-slots" xreflabel="Logical Replication Slots">
     <title>Replication Slots</title>
 
     <indexterm>
@@ -201,19 +203,17 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     </indexterm>
 
     <para>
+     The general concepts of replication slots are discussed under
+     <xref linkend="streaming-replication-slots">. This topic only covers
+     specifics for logical slots.
+    </para>
+
+    <para>
      In the context of logical replication, a slot represents a stream of
      changes that can be replayed to a client in the order they were made on
      the origin server. Each slot streams a sequence of changes from a single
-     database, sending each change exactly once (except when peeking forward
-     in the stream).
+     database, sending each change only once.
     </para>
-
-    <note>
-     <para><productname>PostgreSQL</productname> also has streaming replication slots
-     (see <xref linkend="streaming-replication">), but they are used somewhat
-     differently there.
-     </para>
-    </note>
 
     <para>
      A replication slot has an identifier that is unique across all databases
@@ -243,9 +243,22 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
       even when there is no connection using them. This consumes storage
       because neither required WAL nor required rows from the system catalogs
       can be removed by <command>VACUUM</command> as long as they are required by a replication
-      slot.  So if a slot is no longer required it should be dropped.
+      slot.  If a slot is no longer required it should be dropped to prevent
+      <filename>pg_xlog</filename> from filling up and (for logical slots)
+      the system catalogs from bloating.
      </para>
     </note>
+
+    <para>
+     A replication slot keeps track of the oldest needed WAL position that the
+     application may need to restart replay from. It does <emphasis>not</emphasis>
+     guarantee never to replay the same data twice and updates to the restart
+     position are not immediately flushed to disk so they may be lost if the
+     server crashes. The client application is responsible for keeping track of
+     the point it has replayed up to and should request that replay restart at
+     that point when it reconnects by passing the last-replayed LSN to the
+     start replication command.
+    </para>
    </sect2>
 
    <sect2>
@@ -268,7 +281,10 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
      SNAPSHOT</literal></link> to read the state of the database at the moment
      the slot was created. This transaction can then be used to dump the
      database's state at that point in time, which afterwards can be updated
-     using the slot's contents without losing any changes.
+     using the slot's contents without losing any changes. The exported snapshot
+     remains valid until the connection that created it runs another command
+     or disconnects. It may be imported into another connection and re-exported
+     to preserve it longer.
     </para>
    </sect2>
   </sect1>
@@ -280,7 +296,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     The commands
     <itemizedlist>
      <listitem>
-      <para><literal>CREATE_REPLICATION_SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>output_plugin</replaceable></literal></para>
+      <para><literal>CREATE_REPLICATION_SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>output_plugin</replaceable> <optional>FAILOVER</optional></literal></para>
      </listitem>
 
      <listitem>

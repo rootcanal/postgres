@@ -5377,6 +5377,16 @@
      </row>
 
      <row>
+      <entry><structfield>failover</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <entry></entry>
+      <entry>
+       True if this slot is a failover slot; see
+       <xref linkend="streaming-replication-slots-failover"/>.
+      </entry>
+     </row>
+
+     <row>
       <entry><structfield>xmin</structfield></entry>
       <entry><type>xid</type></entry>
       <entry></entry>

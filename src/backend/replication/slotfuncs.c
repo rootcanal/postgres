@@ -18,6 +18,7 @@
 
 #include "access/htup_details.h"
 #include "replication/slot.h"
+#include "replication/slot_xlog.h"
 #include "replication/logical.h"
 #include "replication/logicalfuncs.h"
 #include "utils/builtins.h"
@@ -41,6 +42,7 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
 	bool 		immediately_reserve = PG_GETARG_BOOL(1);
+	bool		failover = PG_GETARG_BOOL(2);
 	Datum		values[2];
 	bool		nulls[2];
 	TupleDesc	tupdesc;
@@ -57,7 +59,7 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 	CheckSlotRequirements();
 
 	/* acquire replication slot, this will check for conflicting names */
-	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT, false);
+	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT, failover);
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
 	nulls[0] = false;
@@ -96,6 +98,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
 	Name		plugin = PG_GETARG_NAME(1);
+	bool		failover = PG_GETARG_BOOL(2);
 
 	LogicalDecodingContext *ctx = NULL;
 
@@ -120,7 +123,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	 * errors during initialization because it'll get dropped if this
 	 * transaction fails. We'll make it persistent at the end.
 	 */
-	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL, false);
+	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL, failover);
 
 	/*
 	 * Create logical decoding context, to build the initial snapshot.
@@ -174,7 +177,7 @@ pg_drop_replication_slot(PG_FUNCTION_ARGS)
 Datum
 pg_get_replication_slots(PG_FUNCTION_ARGS)
 {
-#define PG_GET_REPLICATION_SLOTS_COLS 10
+#define PG_GET_REPLICATION_SLOTS_COLS 11
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
@@ -224,6 +227,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		XLogRecPtr	restart_lsn;
 		XLogRecPtr	confirmed_flush_lsn;
 		pid_t		active_pid;
+		bool		failover;
 		Oid			database;
 		NameData	slot_name;
 		NameData	plugin;
@@ -246,6 +250,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			namecpy(&plugin, &slot->data.plugin);
 
 			active_pid = slot->active_pid;
+			failover = slot->data.failover;
 		}
 		SpinLockRelease(&slot->mutex);
 
@@ -275,6 +280,8 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			values[i++] = Int32GetDatum(active_pid);
 		else
 			nulls[i++] = true;
+
+		values[i++] = BoolGetDatum(failover);
 
 		if (xmin != InvalidTransactionId)
 			values[i++] = TransactionIdGetDatum(xmin);
