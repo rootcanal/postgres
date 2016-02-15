@@ -85,16 +85,19 @@ CheckLogicalDecodingRequirements(void)
 				 errmsg("logical decoding requires a database connection")));
 
 	/* ----
-	 * TODO: We got to change that someday soon...
+	 * TODO: Allow logical decoding from a standby
 	 *
-	 * There's basically three things missing to allow this:
+	 * There's some things missing to allow this:
 	 * 1) We need to be able to correctly and quickly identify the timeline a
-	 *	  LSN belongs to
-	 * 2) We need to force hot_standby_feedback to be enabled at all times so
-	 *	  the primary cannot remove rows we need.
-	 * 3) support dropping replication slots referring to a database, in
-	 *	  dbase_redo. There can't be any active ones due to HS recovery
-	 *	  conflicts, so that should be relatively easy.
+	 *    LSN belongs to
+	 * 2) To prevent needed rows from being removed we need we would need
+	 *    to enhance hot_standby_feedback so it sends both xmin and
+	 *    catalog_xmin to the master.  A standby slot can't write WAL, so we
+	 *    wouldn't be able to use it directly for failover, without some very
+	 *    complex state interactions via master.
+	 *
+	 * So this doesn't seem likely to change anytime soon.
+	 *
 	 * ----
 	 */
 	if (RecoveryInProgress())
@@ -272,7 +275,7 @@ CreateInitDecodingContext(char *plugin,
 	slot->effective_catalog_xmin = GetOldestSafeDecodingTransactionId();
 	slot->data.catalog_xmin = slot->effective_catalog_xmin;
 
-	ReplicationSlotsComputeRequiredXmin(true);
+	ReplicationSlotsUpdateRequiredXmin(true);
 
 	LWLockRelease(ProcArrayLock);
 
@@ -908,8 +911,8 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 			MyReplicationSlot->effective_catalog_xmin = MyReplicationSlot->data.catalog_xmin;
 			SpinLockRelease(&MyReplicationSlot->mutex);
 
-			ReplicationSlotsComputeRequiredXmin(false);
-			ReplicationSlotsComputeRequiredLSN();
+			ReplicationSlotsUpdateRequiredXmin(false);
+			ReplicationSlotsUpdateRequiredLSN();
 		}
 	}
 	else
