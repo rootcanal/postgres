@@ -140,6 +140,7 @@ LogicalDecodingProcessRecord(LogicalDecodingContext *ctx, XLogRecord *record)
 		case RM_GIST_ID:
 		case RM_SEQ_ID:
 		case RM_SPGIST_ID:
+		case RM_REPLSLOT_ID:
 			/* just deal with xid, and done */
 			ReorderBufferProcessXid(ctx->reorder, record->xl_xid,
 									buf.origptr);

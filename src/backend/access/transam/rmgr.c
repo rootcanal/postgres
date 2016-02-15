@@ -21,6 +21,7 @@
 #include "commands/dbcommands.h"
 #include "commands/sequence.h"
 #include "commands/tablespace.h"
+#include "replication/slot_xlog.h"
 #include "storage/standby.h"
 #include "utils/relmapper.h"
 
