@@ -86,8 +86,8 @@ typedef ReplicationSlotPersistentData *ReplicationSlotInWAL;
 /*
  * WAL records for failover slots
  */
-#define XLOG_REPLSLOT_UPDATE	0x00
-#define XLOG_REPLSLOT_DROP		0x01
+#define XLOG_REPLSLOT_UPDATE	0x10
+#define XLOG_REPLSLOT_DROP		0x20
 
 typedef struct xl_replslot_drop
 {

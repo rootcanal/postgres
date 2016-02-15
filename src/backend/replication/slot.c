@@ -498,16 +498,16 @@ ReplicationSlotDropAcquired()
 	if (XLogInsertAllowed() && slot_is_failover)
 	{
 		xl_replslot_drop	xlrec;
-		XLogRecData			rdata[1];
+		XLogRecData			rdata;
 
 		memcpy(&(xlrec.name), NameStr(slot->data.name), NAMEDATALEN);
 
-		rdata[0].data = (char*) &xlrec;
-		rdata[0].len = SizeOfXLReplSlotDrop;
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = NULL;
+		rdata.data = (char*) &xlrec;
+		rdata.len = SizeOfXLReplSlotDrop;
+		rdata.buffer = InvalidBuffer;
+		rdata.next = NULL;
 
-		(void) XLogInsert(RM_REPLSLOT_ID, XLOG_REPLSLOT_DROP, rdata);
+		(void) XLogInsert(RM_REPLSLOT_ID, XLOG_REPLSLOT_DROP, &rdata);
 	}
 
 	/* Generate pathnames. */
@@ -1164,12 +1164,12 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 		slot->data.persistency == RS_PERSISTENT &&
 		!RecoveryInProgress())
 	{
-		XLogRecData			rdata[2];
+		XLogRecData			rdata;
 
-		rdata[0].data = (char*) (&cp.slotdata);
-		rdata[0].len = SizeOfReplicationSlotInWAL;
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = NULL;
+		rdata.data = (char*) (&cp.slotdata);
+		rdata.len = SizeOfReplicationSlotInWAL;
+		rdata.buffer = InvalidBuffer;
+		rdata.next = NULL;
 
 		/*
 		 * Note that slot creation on the downstream is also an "update".
@@ -1178,7 +1178,7 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 		 * log the update and the downstream creates the new slot if it doesn't
 		 * exist yet.
 		 */
-		(void) XLogInsert(RM_REPLSLOT_ID, XLOG_REPLSLOT_UPDATE, rdata);
+		(void) XLogInsert(RM_REPLSLOT_ID, XLOG_REPLSLOT_UPDATE, &rdata);
 	}
 
 	COMP_CRC32(cp.checksum,
