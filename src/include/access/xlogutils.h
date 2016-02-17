@@ -11,8 +11,8 @@
 #ifndef XLOG_UTILS_H
 #define XLOG_UTILS_H
 
+#include "access/xlogreader.h"
 #include "storage/bufmgr.h"
-
 
 extern bool XLogHaveInvalidPages(void);
 extern void XLogCheckInvalidPages(void);
@@ -28,5 +28,7 @@ extern Buffer XLogReadBufferExtended(RelFileNode rnode, ForkNumber forknum,
 
 extern Relation CreateFakeRelcacheEntry(RelFileNode rnode);
 extern void FreeFakeRelcacheEntry(Relation fakerel);
+
+extern void XLogReadDetermineTimeline(XLogReaderState *state);
 
 #endif
