@@ -7,6 +7,9 @@
  * This file contains support routines that are used by XLOG replay functions.
  * None of this code is used during normal system operation.
  *
+ * Unlike xlogreader.c this is only compiled for the backend so it may use
+ * elog, etc.
+ *
  *
  * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -17,7 +20,9 @@
  */
 #include "postgres.h"
 
+#include "access/timeline.h"
 #include "access/xlog.h"
+#include "access/xlogreader.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
 #include "storage/smgr.h"
@@ -498,4 +503,138 @@ XLogTruncateRelation(RelFileNode rnode, ForkNumber forkNum,
 					 BlockNumber nblocks)
 {
 	forget_invalid_pages(rnode, forkNum, nblocks);
+}
+
+/*
+ * Figure out what timeline to look on for the record the xlogreader
+ * is being asked asked to read, in currRecPtr. This may be used
+ * to determine which xlog segment file to open, etc.
+ *
+ * It depends on:
+ *
+ * - Whether we're reading a record immediately following one we read
+ *   before or doing a random read. We can only use the cached
+ *   timeline info if we're reading sequentially.
+ *
+ * - Whether the timeline of the prior record read was historical or
+ *   the current timeline and, if historical, on where it's valid up
+ *   to. On a historical timeline we need to avoid reading past the
+ *   timeline switch point. The records after it are probably invalid,
+ *   but worse, they might be valid but *different*.
+ *
+ * - If the current timeline became historical since the last record
+ *   we read. We need to make sure we don't read past the switch
+ *   point.
+ *
+ * None of this has any effect unless callbacks use currTLI to
+ * determine which timeline to read from and optionally use the
+ * validity limit to avoid reading past the valid end of a page.
+ *
+ * Note that an xlog segment may contain data from an older timeline
+ * if it was copied during a timeline switch. Callers may NOT assume
+ * that currTLI is the timeline that will be in a given page's
+ * xlp_tli; the page may begin on older timeline.
+ */
+void
+XLogReadDetermineTimeline(XLogReaderState *state)
+{
+	if (state->timelineHistory == NULL)
+		state->timelineHistory = readTimeLineHistory(ThisTimeLineID);
+
+	if (state->currTLIValidUntil == InvalidXLogRecPtr &&
+		state->currTLI != ThisTimeLineID &&
+		state->currTLI != 0)
+	{
+		/*
+		 * We were reading what was the current timeline but it became
+		 * historical. Either we were replaying as a replica and got
+		 * promoted or we're replaying as a cascading replica from a
+		 * parent that got promoted.
+		 *
+		 * Force a re-read of the timeline history.
+		 */
+		list_free_deep(state->timelineHistory);
+		state->timelineHistory = readTimeLineHistory(ThisTimeLineID);
+
+		elog(DEBUG2, "timeline %u became historical during decoding",
+				state->currTLI);
+
+		/* then invalidate the timeline info so we read again */
+		state->currTLI = 0;
+	}
+
+	if (state->currRecPtr == state->EndRecPtr &&
+		state->currTLIValidUntil != InvalidXLogRecPtr &&
+		state->currRecPtr >= state->currTLIValidUntil)
+	{
+		/*
+		 * We're reading the immedately following record but we're at
+		 * a timeline boundary and must read the next record from the
+		 * new TLI.
+		 */
+		elog(DEBUG2, "Requested record %X/%X is after end of cur TLI %u "
+				"valid until %X/%X, switching to next timeline",
+				(uint32)(state->currRecPtr >> 32),
+				(uint32)state->currRecPtr,
+				state->currTLI,
+				(uint32)(state->currTLIValidUntil >> 32),
+				(uint32)(state->currTLIValidUntil));
+
+		/* Invalidate TLI info so we look it up again */
+		state->currTLI = 0;
+		state->currTLIValidUntil = InvalidXLogRecPtr;
+	}
+
+	if (state->currRecPtr != state->EndRecPtr ||
+		state->currTLI == 0)
+	{
+		/*
+		 * Something changed. We're not reading the record immediately
+		 * after the one we just read, the previous record was at
+		 * timeline boundary or we didn't yet determine the timeline
+		 * to read from.
+		 *
+		 * Work out what timeline to read this record from.
+		 */
+		state->currTLI = tliOfPointInHistory(state->currRecPtr,
+				state->timelineHistory);
+
+		if (state->currTLI != ThisTimeLineID)
+		{
+			/*
+			 * It's on a historical timeline.
+			 *
+			 * We'll probably read more records after this so make a
+			 * note of the point at we have to stop reading and do
+			 * another TLI switch.
+			 *
+			 * Callbacks can also use this to avoid reading past the
+			 * valid end of the TLI.
+			 */
+			state->currTLIValidUntil = tliSwitchPoint(state->currTLI,
+					state->timelineHistory, NULL);
+		}
+		else
+		{
+			/*
+			 * We're on the current timeline. The callback can use the
+			 * xlog flush position and we don't have to worry about
+			 * the TLI ending.
+			 *
+			 * If we're in recovery from another standby (cascading)
+			 * we could receive a new timeline, making the current
+			 * timeline historical. We check that by comparing currTLI
+			 * again at each record read.
+			 */
+			state->currTLIValidUntil = InvalidXLogRecPtr;
+		}
+
+		elog(DEBUG2, "XLog read ptr %X/%X is on tli %u valid until %X/%X, current tli is %u",
+				(uint32)(state->currRecPtr >> 32),
+				(uint32)state->currRecPtr,
+				state->currTLI,
+				(uint32)(state->currTLIValidUntil >> 32),
+				(uint32)(state->currTLIValidUntil),
+				ThisTimeLineID);
+	}
 }

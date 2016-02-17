@@ -14,12 +14,16 @@
  *
  *		The basic idea is to allocate an XLogReaderState via
  *		XLogReaderAllocate(), and call XLogReadRecord() until it returns NULL.
+ *
+ *		The xlogreader is compiled as both front-end and backend code so
+ *		it may not use elog, server-defined static variables, etc.
  *-------------------------------------------------------------------------
  */
 #ifndef XLOGREADER_H
 #define XLOGREADER_H
 
 #include "access/xlog_internal.h"
+#include "nodes/pg_list.h"
 
 typedef struct XLogReaderState XLogReaderState;
 
@@ -99,10 +103,20 @@ struct XLogReaderState
 
 	/* beginning of the WAL record being read. */
 	XLogRecPtr	currRecPtr;
+	/* timeline to read it from, 0 if a lookup is required */
+	TimeLineID  currTLI;
+	/*
+	 * Endpoint of timeline in currTLI if it's historical or
+	 * InvalidXLogRecPtr if currTLI is the current timeline.
+	 */
+	XLogRecPtr	currTLIValidUntil;
 
 	/* Buffer for current ReadRecord result (expandable) */
 	char	   *readRecordBuf;
 	uint32		readRecordBufSize;
+
+	/* cached timeline history */
+	List	   *timelineHistory;
 
 	/* Buffer to hold error message */
 	char	   *errormsg_buf;
@@ -118,6 +132,9 @@ extern void XLogReaderFree(XLogReaderState *state);
 /* Read the next XLog record. Returns NULL on end-of-WAL or failure */
 extern struct XLogRecord *XLogReadRecord(XLogReaderState *state,
 			   XLogRecPtr recptr, char **errormsg);
+
+/* Flush any cached page */
+extern void XLogReaderInvalCache(XLogReaderState *state);
 
 #ifdef FRONTEND
 extern XLogRecPtr XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr);
