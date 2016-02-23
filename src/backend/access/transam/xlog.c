@@ -9786,6 +9786,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	bool		backup_started_in_recovery = false;
 	XLogRecPtr	checkpointloc;
 	XLogRecPtr	startpoint;
+	XLogRecPtr  slot_startpoint;
 	TimeLineID	starttli;
 	pg_time_t	stamp_time;
 	char		strfbuf[128];
@@ -9929,6 +9930,17 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 			starttli = ControlFile->checkPointCopy.ThisTimeLineID;
 			checkpointfpw = ControlFile->checkPointCopy.fullPageWrites;
 			LWLockRelease(ControlFileLock);
+
+			/*
+			 * If failover slots are in use we must retain and transfer WAL
+			 * older than the redo location so that those slots can be replayed
+			 * from after a failover event.
+			 *
+			 * This MUST be at an xlog segment boundary so truncate the LSN
+			 * appropriately.
+			 */
+			if (max_replication_slots > 0)
+				slot_startpoint = (ReplicationSlotsComputeRequiredLSN(true)/ XLOG_SEG_SIZE) * XLOG_SEG_SIZE;
 
 			if (backup_started_in_recovery)
 			{
@@ -10100,6 +10112,9 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 						 backup_started_in_recovery ? "standby" : "master");
 		appendStringInfo(labelfile, "START TIME: %s\n", strfbuf);
 		appendStringInfo(labelfile, "LABEL: %s\n", backupidstr);
+		if (slot_startpoint != InvalidXLogRecPtr)
+			appendStringInfo(labelfile,  "MIN FAILOVER SLOT LSN: %X/%X\n",
+						(uint32)(slot_startpoint>>32), (uint32)slot_startpoint);
 
 		/*
 		 * Okay, write the file, or return its contents to caller.
@@ -10191,9 +10206,34 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 
 	/*
 	 * We're done.  As a convenience, return the starting WAL location.
+	 *
+	 * pg_basebackup etc expect to use this as the position to start copying
+	 * WAL from, so we should return the minimum of the slot start LSN and the
+	 * current redo position to make sure we get all WAL required by failover
+	 * slots.
+	 *
+	 * The min required LSN for failover slots is also available from the
+	 * 'MIN FAILOVER SLOT LSN' entry in the backup label file.
 	 */
+	if (slot_startpoint != InvalidXLogRecPtr && slot_startpoint < startpoint)
+	{
+		List *history;
+		TimeLineID slot_start_tli;
+
+		/* Min LSN required by a slot may be on an older timeline. */
+		history = readTimeLineHistory(ThisTimeLineID);
+		slot_start_tli = tliOfPointInHistory(slot_startpoint, history);
+		list_free_deep(history);
+
+		if (slot_start_tli < starttli)
+			starttli = slot_start_tli;
+
+		startpoint = slot_startpoint;
+	}
+
 	if (starttli_p)
 		*starttli_p = starttli;
+
 	return startpoint;
 }
 
