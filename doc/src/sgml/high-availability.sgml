@@ -949,6 +949,47 @@ primary_slot_name = 'node_a_slot'
 </programlisting>
     </para>
    </sect3>
+
+   <sect3 id="streaming-replication-slots-failover" xreflabel="Failover slots">
+     <title>Failover slots</title>
+
+     <para>
+      Normally a replication slot is not preserved across backup and restore
+      (such as by <application>pg_basebackup</application>) and is not
+      replicated to standbys. Slots are <emphasis>automatically
+      dropped</emphasis> when starting up as a streaming replica or in archive
+      recovery (PITR) mode.
+     </para>
+
+     <para>
+      To make it possible to for an application to consistently follow
+      failover when a replica is promoted to a new master a slot may be
+      created as a <emphasis>failover slot</emphasis>. A failover slot may
+      only be created, replayed from or dropped on a master server. Changes to
+      the slot are written to WAL and replicated to standbys. When a standby
+      is promoted applications may connect to the slot on the standby and
+      resume replay from it at a consistent point, as if it was the original
+      master. Failover slots may not be used to replay from a standby before
+      promotion.
+     </para>
+
+     <para>
+      Non-failover slots may be created on and used from a replica. This is
+      currently limited to physical slots as logical decoding is not supported
+      on replica server.
+     </para>
+
+     <para>
+      When a failover slot created on the master has the same name as a
+      non-failover slot on a replica server the non-failover slot will be
+      automatically dropped. Any client currently connected will be
+      disconnected with an error indicating a conflict with recovery. It
+      is strongly recommended that you avoid creating failover slots with
+      the same name as slots on replicas.
+     </para>
+
+   </sect3>
+
   </sect2>
 
   <sect2 id="cascading-replication">

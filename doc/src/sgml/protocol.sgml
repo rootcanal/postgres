@@ -1434,7 +1434,7 @@ The commands accepted in walsender mode are:
   </varlistentry>
 
   <varlistentry>
-   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> { <literal>PHYSICAL</> [ <literal>RESERVE_WAL</> ] | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> }
+   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> { <literal>PHYSICAL</> <optional><literal>RESERVE_WAL</></> | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> } <optional><literal>FAILOVER</></>
      <indexterm><primary>CREATE_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
@@ -1474,6 +1474,17 @@ The commands accepted in walsender mode are:
         </para>
        </listitem>
       </varlistentry>
+
+      <varlistentry>
+       <term><literal>FAILOVER</></term>
+       <listitem>
+        <para>
+         Create this slot as a <link linkend="streaming-replication-slots-failover">
+         failover slot</link>.
+        </para>
+       </listitem>
+      </varlistentry>
+
      </variablelist>
     </listitem>
   </varlistentry>
@@ -1827,6 +1838,12 @@ The commands accepted in walsender mode are:
      <para>
       The output plugin associated with the selected slot is used
       to process the output for streaming.
+     </para>
+
+     <para>
+      Logical replication automatically follows timeline switches. It is
+      not necessary or possible to supply a <literal>TIMELINE</literal>
+      option like in physical replication.
      </para>
 
      <variablelist>

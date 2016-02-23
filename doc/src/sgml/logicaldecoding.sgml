@@ -280,7 +280,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     The commands
     <itemizedlist>
      <listitem>
-      <para><literal>CREATE_REPLICATION_SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>output_plugin</replaceable></literal></para>
+      <para><literal>CREATE_REPLICATION_SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>output_plugin</replaceable> <optional>FAILOVER</optional></literal></para>
      </listitem>
 
      <listitem>

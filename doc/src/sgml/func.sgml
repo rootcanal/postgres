@@ -18069,7 +18069,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <indexterm>
          <primary>pg_create_physical_replication_slot</primary>
         </indexterm>
-        <literal><function>pg_create_physical_replication_slot(<parameter>slot_name</parameter> <type>name</type> <optional>, <parameter>immediately_reserve</> <type>boolean</> </optional>)</function></literal>
+        <literal><function>pg_create_physical_replication_slot(<parameter>slot_name</parameter> <type>name</type>, <optional><parameter>immediately_reserve</> <type>boolean</></optional>, <optional><parameter>failover</> <type>boolean</></optional>)</function></literal>
        </entry>
        <entry>
         (<parameter>slot_name</parameter> <type>name</type>, <parameter>xlog_position</parameter> <type>pg_lsn</type>)
@@ -18080,7 +18080,10 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         when <literal>true</>, specifies that the <acronym>LSN</> for this
         replication slot be reserved immediately; otherwise
         the <acronym>LSN</> is reserved on first connection from a streaming
-        replication client. Streaming changes from a physical slot is only
+        replication client. If <literal>failover</literal> is <literal>true</literal>
+        then the slot is created as a failover slot; see <xref
+        linkend="streaming-replication-slots-failover">.
+        Streaming changes from a physical slot is only
         possible with the streaming-replication protocol &mdash;
         see <xref linkend="protocol-replication">. This function corresponds
         to the replication protocol command <literal>CREATE_REPLICATION_SLOT
@@ -18109,7 +18112,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <indexterm>
          <primary>pg_create_logical_replication_slot</primary>
         </indexterm>
-        <literal><function>pg_create_logical_replication_slot(<parameter>slot_name</parameter> <type>name</type>, <parameter>plugin</parameter> <type>name</type>)</function></literal>
+        <literal><function>pg_create_logical_replication_slot(<parameter>slot_name</parameter> <type>name</type>, <parameter>plugin</parameter> <type>name</type>, <optional><parameter>failover</> <type>boolean</></optional>)</function></literal>
        </entry>
        <entry>
         (<parameter>slot_name</parameter> <type>name</type>, <parameter>xlog_position</parameter> <type>pg_lsn</type>)
@@ -18117,8 +18120,10 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        <entry>
         Creates a new logical (decoding) replication slot named
         <parameter>slot_name</parameter> using the output plugin
-        <parameter>plugin</parameter>.  A call to this function has the same
-        effect as the replication protocol command
+        <parameter>plugin</parameter>. If <literal>failover</literal>
+        is <literal>true</literal> the slot is created as a failover
+        slot; see <xref linkend="streaming-replication-slots-failover">. A call to
+        this function has the same effect as the replication protocol command
         <literal>CREATE_REPLICATION_SLOT ... LOGICAL</literal>.
        </entry>
       </row>
