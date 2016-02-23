@@ -2114,6 +2114,9 @@ dbase_redo(XLogReaderState *record)
 		/* Clean out the xlog relcache too */
 		XLogDropDatabase(xlrec->db_id);
 
+		/* Drop any logical failover slots for this database */
+		ReplicationSlotsDropDBSlots(xlrec->db_id);
+
 		/* And remove the physical files */
 		if (!rmtree(dst_path, true))
 			ereport(WARNING,

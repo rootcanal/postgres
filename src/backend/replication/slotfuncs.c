@@ -57,7 +57,7 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 	CheckSlotRequirements();
 
 	/* acquire replication slot, this will check for conflicting names */
-	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT);
+	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT, false);
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
 	nulls[0] = false;
@@ -120,7 +120,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	 * errors during initialization because it'll get dropped if this
 	 * transaction fails. We'll make it persistent at the end.
 	 */
-	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL);
+	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL, false);
 
 	/*
 	 * Create logical decoding context, to build the initial snapshot.

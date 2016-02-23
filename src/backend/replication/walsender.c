@@ -801,7 +801,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 
 	if (cmd->kind == REPLICATION_KIND_PHYSICAL)
 	{
-		ReplicationSlotCreate(cmd->slotname, false, RS_PERSISTENT);
+		ReplicationSlotCreate(cmd->slotname, false, RS_PERSISTENT, false);
 	}
 	else
 	{
@@ -812,7 +812,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		 * handle errors during initialization because it'll get dropped if
 		 * this transaction fails. We'll make it persistent at the end.
 		 */
-		ReplicationSlotCreate(cmd->slotname, true, RS_EPHEMERAL);
+		ReplicationSlotCreate(cmd->slotname, true, RS_EPHEMERAL, false);
 	}
 
 	initStringInfo(&output_message);
@@ -1528,7 +1528,7 @@ PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 	if (changed)
 	{
 		ReplicationSlotMarkDirty();
-		ReplicationSlotsComputeRequiredLSN();
+		ReplicationSlotsUpdateRequiredLSN();
 	}
 
 	/*
@@ -1624,7 +1624,7 @@ PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin)
 	if (changed)
 	{
 		ReplicationSlotMarkDirty();
-		ReplicationSlotsComputeRequiredXmin(false);
+		ReplicationSlotsUpdateRequiredXmin(false);
 	}
 }
 

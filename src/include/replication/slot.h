@@ -11,72 +11,10 @@
 
 #include "fmgr.h"
 #include "access/xlog.h"
-#include "access/xlogreader.h"
+#include "replication/slot_xlog.h"
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
-
-/*
- * Behaviour of replication slots, upon release or crash.
- *
- * Slots marked as PERSISTENT are crashsafe and will not be dropped when
- * released. Slots marked as EPHEMERAL will be dropped when released or after
- * restarts.
- *
- * EPHEMERAL slots can be made PERSISTENT by calling ReplicationSlotPersist().
- */
-typedef enum ReplicationSlotPersistency
-{
-	RS_PERSISTENT,
-	RS_EPHEMERAL
-} ReplicationSlotPersistency;
-
-/*
- * On-Disk data of a replication slot, preserved across restarts.
- */
-typedef struct ReplicationSlotPersistentData
-{
-	/* The slot's identifier */
-	NameData	name;
-
-	/* database the slot is active on */
-	Oid			database;
-
-	/*
-	 * The slot's behaviour when being dropped (or restored after a crash).
-	 */
-	ReplicationSlotPersistency persistency;
-
-	/*
-	 * xmin horizon for data
-	 *
-	 * NB: This may represent a value that hasn't been written to disk yet;
-	 * see notes for effective_xmin, below.
-	 */
-	TransactionId xmin;
-
-	/*
-	 * xmin horizon for catalog tuples
-	 *
-	 * NB: This may represent a value that hasn't been written to disk yet;
-	 * see notes for effective_xmin, below.
-	 */
-	TransactionId catalog_xmin;
-
-	/* oldest LSN that might be required by this replication slot */
-	XLogRecPtr	restart_lsn;
-
-	/*
-	 * Oldest LSN that the client has acked receipt for.  This is used as the
-	 * start_lsn point in case the client doesn't specify one, and also as a
-	 * safety measure to jump forwards in case the client specifies a
-	 * start_lsn that's further in the past than this value.
-	 */
-	XLogRecPtr	confirmed_flush;
-
-	/* plugin name */
-	NameData	plugin;
-} ReplicationSlotPersistentData;
 
 /*
  * Shared memory state of a single replication slot.
@@ -159,7 +97,7 @@ extern void ReplicationSlotsShmemInit(void);
 
 /* management of individual slots */
 extern void ReplicationSlotCreate(const char *name, bool db_specific,
-					  ReplicationSlotPersistency p);
+					  ReplicationSlotPersistency p, bool failover);
 extern void ReplicationSlotPersist(void);
 extern void ReplicationSlotDrop(const char *name);
 
@@ -171,12 +109,14 @@ extern void ReplicationSlotMarkDirty(void);
 /* misc stuff */
 extern bool ReplicationSlotValidateName(const char *name, int elevel);
 extern void ReplicationSlotReserveWal(void);
-extern void ReplicationSlotsComputeRequiredXmin(bool already_locked);
-extern void ReplicationSlotsComputeRequiredLSN(void);
+extern void ReplicationSlotsUpdateRequiredXmin(bool already_locked);
+extern void ReplicationSlotsUpdateRequiredLSN(void);
 extern XLogRecPtr ReplicationSlotsComputeLogicalRestartLSN(void);
+extern XLogRecPtr ReplicationSlotsComputeRequiredLSN(bool failover_only);
 extern bool ReplicationSlotsCountDBSlots(Oid dboid, int *nslots, int *nactive);
+extern void ReplicationSlotsDropDBSlots(Oid dboid);
 
-extern void StartupReplicationSlots(void);
+extern void StartupReplicationSlots(bool drop_nonfailover_slots);
 extern void CheckPointReplicationSlots(void);
 
 extern void CheckSlotRequirements(void);
