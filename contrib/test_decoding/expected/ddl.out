@@ -61,11 +61,37 @@ SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_d
 SELECT slot_name, plugin, slot_type, active,
     NOT catalog_xmin IS NULL AS catalog_xmin_set,
     xmin IS NULl  AS data_xmin_not_set,
-    pg_xlog_location_diff(restart_lsn, '0/01000000') > 0 AS some_wal
+    pg_xlog_location_diff(restart_lsn, '0/01000000') > 0 AS some_wal,
+    failover
 FROM pg_replication_slots;
-    slot_name    |    plugin     | slot_type | active | catalog_xmin_set | data_xmin_not_set | some_wal 
------------------+---------------+-----------+--------+------------------+-------------------+----------
- regression_slot | test_decoding | logical   | f      | t                | t                 | t
+    slot_name    |    plugin     | slot_type | active | catalog_xmin_set | data_xmin_not_set | some_wal | failover 
+-----------------+---------------+-----------+--------+------------------+-------------------+----------+----------
+ regression_slot | test_decoding | logical   | f      | t                | t                 | t        | f
+(1 row)
+
+/* same for a failover slot */
+SELECT 'init' FROM pg_create_logical_replication_slot('failover_slot', 'test_decoding', true);
+ ?column? 
+----------
+ init
+(1 row)
+
+SELECT slot_name, plugin, slot_type, active,
+    NOT catalog_xmin IS NULL AS catalog_xmin_set,
+    xmin IS NULl  AS data_xmin_not_set,
+    pg_xlog_location_diff(restart_lsn, '0/01000000') > 0 AS some_wal,
+    failover
+FROM pg_replication_slots
+WHERE slot_name = 'failover_slot';
+   slot_name   |    plugin     | slot_type | active | catalog_xmin_set | data_xmin_not_set | some_wal | failover 
+---------------+---------------+-----------+--------+------------------+-------------------+----------+----------
+ failover_slot | test_decoding | logical   | f      | t                | t                 | t        | t
+(1 row)
+
+SELECT pg_drop_replication_slot('failover_slot');
+ pg_drop_replication_slot 
+--------------------------
+ 
 (1 row)
 
 /*
@@ -705,7 +731,7 @@ SELECT pg_drop_replication_slot('regression_slot');
 
 /* check that the slot is gone */
 SELECT * FROM pg_replication_slots;
- slot_name | plugin | slot_type | datoid | database | active | active_pid | xmin | catalog_xmin | restart_lsn | confirmed_flush_lsn 
------------+--------+-----------+--------+----------+--------+------------+------+--------------+-------------+---------------------
+ slot_name | plugin | slot_type | datoid | database | active | active_pid | failover | xmin | catalog_xmin | restart_lsn | confirmed_flush_lsn 
+-----------+--------+-----------+--------+----------+--------+------------+----------+------+--------------+-------------+---------------------
 (0 rows)
 

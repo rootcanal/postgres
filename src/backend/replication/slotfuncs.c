@@ -177,7 +177,7 @@ pg_drop_replication_slot(PG_FUNCTION_ARGS)
 Datum
 pg_get_replication_slots(PG_FUNCTION_ARGS)
 {
-#define PG_GET_REPLICATION_SLOTS_COLS 10
+#define PG_GET_REPLICATION_SLOTS_COLS 11
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
@@ -227,6 +227,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		XLogRecPtr	restart_lsn;
 		XLogRecPtr	confirmed_flush_lsn;
 		pid_t		active_pid;
+		bool		failover;
 		Oid			database;
 		NameData	slot_name;
 		NameData	plugin;
@@ -249,6 +250,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			namecpy(&plugin, &slot->data.plugin);
 
 			active_pid = slot->active_pid;
+			failover = slot->data.failover;
 		}
 		SpinLockRelease(&slot->mutex);
 
@@ -278,6 +280,8 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			values[i++] = Int32GetDatum(active_pid);
 		else
 			nulls[i++] = true;
+
+		values[i++] = BoolGetDatum(failover);
 
 		if (xmin != InvalidTransactionId)
 			values[i++] = TransactionIdGetDatum(xmin);
