@@ -6305,8 +6305,11 @@ StartupXLOG(void)
 	/*
 	 * Initialize replication slots, before there's a chance to remove
 	 * required resources.
+	 *
+	 * If we're in archive recovery then non-failover slots are no
+	 * longer of any use and should be dropped during startup.
 	 */
-	StartupReplicationSlots();
+	StartupReplicationSlots(ArchiveRecoveryRequested);
 
 	/*
 	 * Startup logical state, needs to be setup now so we have proper data
@@ -8145,6 +8148,12 @@ CreateCheckPoint(int flags)
 	LWLockAcquire(CheckpointLock, LW_EXCLUSIVE);
 
 	/*
+	 * Flush dirty replication slots before we block WAL writes, so
+	 * any failover slots get written out.
+	 */
+	CheckPointReplicationSlots();
+
+	/*
 	 * Prepare to accumulate statistics.
 	 *
 	 * Note: because it is possible for log_checkpoints to change while a
@@ -8585,7 +8594,6 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 	CheckPointMultiXact();
 	CheckPointPredicate();
 	CheckPointRelationMap();
-	CheckPointReplicationSlots();
 	CheckPointSnapBuild();
 	CheckPointLogicalRewriteHeap();
 	CheckPointBuffers(flags);	/* performs all required fsyncs */
@@ -8658,6 +8666,8 @@ CreateRestartPoint(int flags)
 	 * happens at a time.
 	 */
 	LWLockAcquire(CheckpointLock, LW_EXCLUSIVE);
+
+	CheckPointReplicationSlots();
 
 	/* Get a local copy of the last safe checkpoint record. */
 	SpinLockAcquire(&XLogCtl->info_lck);

@@ -896,101 +896,125 @@ read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
  * TODO: This is duplicate code with pg_xlogdump, similar to walsender.c, but
  * we currently don't have the infrastructure (elog!) to share it.
  */
-static void
-XLogRead(char *buf, TimeLineID tli, XLogRecPtr startptr, Size count)
+void
+XLogReadDetermineTimeline(XLogReaderState *state)
 {
-	char	   *p;
-	XLogRecPtr	recptr;
-	Size		nbytes;
+	if (state->timelineHistory == NULL)
+		state->timelineHistory = readTimeLineHistory(ThisTimeLineID);
 
-	static int	sendFile = -1;
-	static XLogSegNo sendSegNo = 0;
-	static uint32 sendOff = 0;
-
-	p = buf;
-	recptr = startptr;
-	nbytes = count;
-
-	while (nbytes > 0)
+	if (state->currRecPtr != state->EndRecPtr)
 	{
-		uint32		startoff;
-		int			segbytes;
-		int			readbytes;
+		/*
+		 * Not reading the immediately following record so
+		 * invalidate cached timeline info.
+		 */
+		state->currTLI = 0;
+		state->currTLIValidUntil = InvalidXLogRecPtr;
+	}
 
-		startoff = recptr % XLogSegSize;
+	if (state->currTLIValidUntil == InvalidXLogRecPtr &&
+		state->currTLI != ThisTimeLineID &&
+		state->currTLI != 0)
+	{
+		/*
+		 * We were reading what was the current timeline but it became
+		 * historical. Either we were replaying as a replica and got
+		 * promoted or we're replaying as a cascading replica from a
+		 * parent that got promoted.
+		 *
+		 * Force a re-read of the timeline history.
+		 */
+		list_free_deep(state->timelineHistory);
+		state->timelineHistory = readTimeLineHistory(ThisTimeLineID);
 
-		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo))
+		elog(DEBUG2, "timeline %u became historical during decoding",
+				state->currTLI);
+
+		/* then invalidate the timeline info so we read again */
+		state->currTLI = 0;
+		state->currTLIValidUntil = InvalidXLogRecPtr;
+	}
+
+	if (state->currRecPtr == state->EndRecPtr &&
+		state->currTLI != 0 &&
+		state->currTLIValidUntil != InvalidXLogRecPtr &&
+		state->currRecPtr >= state->currTLIValidUntil)
+	{
+		/*
+		 * We're reading the immedately following record but we're
+		 * at a timeline boundary (or on a segment containing one)
+		 * and must read the next record from the new TLI.
+		 */
+		elog(DEBUG2, "Requested record %X/%X is on segment containing end of TLI %u "
+				"valid until %X/%X, switching to next timeline",
+				(uint32)(state->currRecPtr >> 32),
+				(uint32)state->currRecPtr,
+				state->currTLI,
+				(uint32)(state->currTLIValidUntil >> 32),
+				(uint32)(state->currTLIValidUntil));
+
+		/* Invalidate TLI info so we look up the next TLI */
+		state->currTLI = 0;
+		state->currTLIValidUntil = InvalidXLogRecPtr;
+	}
+
+	if (state->currTLI == 0)
+	{
+		/*
+		 * Something changed. We're not reading the record immediately
+		 * after the one we just read, the previous record was at
+		 * timeline boundary or we didn't yet determine the timeline
+		 * to read from.
+		 *
+		 * Work out what timeline this record is on. We might read
+		 * it from the segment on this TLI or, if the segment
+		 * contains newer timelines, the copy from a newer TLI.
+		 */
+		state->currTLI = tliOfPointInHistory(state->currRecPtr,
+				state->timelineHistory);
+
+		/*
+		 * Look for the most recent timeline that's on the same xlog
+		 * segment as this record, since that's the only one we can
+		 * assume is still readable.
+		 */
+		while (state->currTLI != ThisTimeLineID &&
+			   state->currTLIValidUntil == InvalidXLogRecPtr)
 		{
-			char		path[MAXPGPATH];
+			XLogRecPtr	tliSwitch;
+			TimeLineID	nextTLI;
 
-			/* Switch to another logfile segment */
-			if (sendFile >= 0)
-				close(sendFile);
+			tliSwitch = tliSwitchPoint(state->currTLI, state->timelineHistory,
+					&nextTLI);
 
-			XLByteToSeg(recptr, sendSegNo);
+			state->currTLIValidUntil = ((tliSwitch / XLogSegSize) * XLogSegSize);
 
-			XLogFilePath(path, tli, sendSegNo);
-
-			sendFile = BasicOpenFile(path, O_RDONLY | PG_BINARY, 0);
-
-			if (sendFile < 0)
+			if (state->currRecPtr >= state->currTLIValidUntil)
 			{
-				if (errno == ENOENT)
-					ereport(ERROR,
-							(errcode_for_file_access(),
-							 errmsg("requested WAL segment %s has already been removed",
-									path)));
-				else
-					ereport(ERROR,
-							(errcode_for_file_access(),
-							 errmsg("could not open file \"%s\": %m",
-									path)));
+				/*
+				 * The new currTLI ends on this WAL segment so
+				 * check the next TLI to see if it's the last
+				 * one on the segment.
+				 *
+				 * If that's the current TLI we'll stop
+				 * searching.
+				 */
+				state->currTLI = nextTLI;
+				state->currTLIValidUntil = InvalidXLogRecPtr;
 			}
-			sendOff = 0;
 		}
 
-		/* Need to seek in the file? */
-		if (sendOff != startoff)
-		{
-			if (lseek(sendFile, (off_t) startoff, SEEK_SET) < 0)
-			{
-				char		path[MAXPGPATH];
-
-				XLogFilePath(path, tli, sendSegNo);
-
-				ereport(ERROR,
-						(errcode_for_file_access(),
-				  errmsg("could not seek in log segment %s to offset %u: %m",
-						 path, startoff)));
-			}
-			sendOff = startoff;
-		}
-
-		/* How many bytes are within this segment? */
-		if (nbytes > (XLogSegSize - startoff))
-			segbytes = XLogSegSize - startoff;
-		else
-			segbytes = nbytes;
-
-		readbytes = read(sendFile, p, segbytes);
-		if (readbytes <= 0)
-		{
-			char		path[MAXPGPATH];
-
-			XLogFilePath(path, tli, sendSegNo);
-
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from log segment %s, offset %u, length %lu: %m",
-							path, sendOff, (unsigned long) segbytes)));
-		}
-
-		/* Update state for read */
-		recptr += readbytes;
-
-		sendOff += readbytes;
-		nbytes -= readbytes;
-		p += readbytes;
+		/*
+		 * We're now either reading from the first xlog seg in the
+		 * current server's timeline or the most recent historical
+		 * timeline that exists on the target segment.
+		 */
+		elog(DEBUG2, "XLog read ptr %X/%X is on seg with tli %u valid until %X/%X, server current tli is %u",
+				(uint32)(state->currRecPtr >> 32),
+				(uint32)state->currRecPtr,
+				state->currTLI,
+				(uint32)(state->currTLIValidUntil >> 32),
+				(uint32)(state->currTLIValidUntil),
+				ThisTimeLineID);
 	}
 }
-

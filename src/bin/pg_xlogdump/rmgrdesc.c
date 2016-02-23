@@ -26,6 +26,7 @@
 #include "commands/sequence.h"
 #include "commands/tablespace.h"
 #include "replication/origin.h"
+#include "replication/slot_xlog.h"
 #include "rmgrdesc.h"
 #include "storage/standby.h"
 #include "utils/relmapper.h"
