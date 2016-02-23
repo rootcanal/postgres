@@ -801,7 +801,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 
 	if (cmd->kind == REPLICATION_KIND_PHYSICAL)
 	{
-		ReplicationSlotCreate(cmd->slotname, false, RS_PERSISTENT, false);
+		ReplicationSlotCreate(cmd->slotname, false, RS_PERSISTENT, cmd->failover);
 	}
 	else
 	{
@@ -812,7 +812,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		 * handle errors during initialization because it'll get dropped if
 		 * this transaction fails. We'll make it persistent at the end.
 		 */
-		ReplicationSlotCreate(cmd->slotname, true, RS_EPHEMERAL, false);
+		ReplicationSlotCreate(cmd->slotname, true, RS_EPHEMERAL, cmd->failover);
 	}
 
 	initStringInfo(&output_message);

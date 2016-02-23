@@ -98,6 +98,7 @@ PHYSICAL			{ return K_PHYSICAL; }
 RESERVE_WAL			{ return K_RESERVE_WAL; }
 LOGICAL				{ return K_LOGICAL; }
 SLOT				{ return K_SLOT; }
+FAILOVER			{ return K_FAILOVER; }
 
 ","				{ return ','; }
 ";"				{ return ';'; }

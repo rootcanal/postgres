@@ -9,6 +9,9 @@ SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_d
 -- fail because of an already existing slot
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
 ERROR:  replication slot "regression_slot" already exists
+-- fail because a failover slot can't replace a normal slot on the master
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding', true);
+ERROR:  replication slot "regression_slot" already exists
 -- fail because of an invalid name
 SELECT 'init' FROM pg_create_logical_replication_slot('Invalid Name', 'test_decoding');
 ERROR:  replication slot name "Invalid Name" contains invalid character

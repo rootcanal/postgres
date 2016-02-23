@@ -4,6 +4,8 @@ SET synchronous_commit = on;
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
 -- fail because of an already existing slot
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
+-- fail because a failover slot can't replace a normal slot on the master
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding', true);
 -- fail because of an invalid name
 SELECT 'init' FROM pg_create_logical_replication_slot('Invalid Name', 'test_decoding');
 
