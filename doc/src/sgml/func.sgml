@@ -17769,6 +17769,48 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
        </entry>
       </row>
 
+      <row>
+       <entry id="pg-logical-send-message-text">
+        <indexterm>
+         <primary>pg_logical_send_message</primary>
+        </indexterm>
+        <literal><function>pg_logical_send_message(<parameter>transactional</parameter> <type>bool</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>text</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        Write text logical decoding message. This can be used to pass generic
+        messages to logical decoding plugins through WAL. The parameter
+        <parameter>transactional</parameter> specifies if the message should
+        be part of current transaction or if it should be written and decoded
+        immediately. The <parameter>prefix</parameter> has to be prefix which
+        was registered by a plugin. The <parameter>content</parameter> is
+        content of the message.
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-logical-send-message-bytea">
+        <indexterm>
+         <primary>pg_logical_send_message</primary>
+        </indexterm>
+        <literal><function>pg_logical_send_message(<parameter>transactional</parameter> <type>bool</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>bytea</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        Write binary logical decoding message. This can be used to pass generic
+        messages to logical decoding plugins through WAL. The parameter
+        <parameter>transactional</parameter> specifies if the message should
+        be part of current transaction or if it should be written and decoded
+        immediately. The <parameter>prefix</parameter> has to be prefix which
+        was registered by a plugin. The <parameter>content</parameter> is
+        content of the message.
+       </entry>
+      </row>
+
      </tbody>
     </tgroup>
    </table>
