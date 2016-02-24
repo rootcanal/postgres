@@ -10077,7 +10077,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	 * The min required LSN for failover slots is also available from the
 	 * 'MIN FAILOVER SLOT LSN' entry in the backup label file.
 	 */
-	if (slot_startpoint < startpoint)
+	if (slot_startpoint != InvalidXLogRecPtr && slot_startpoint < startpoint)
 	{
 		List *history;
 		TimeLineID slot_start_tli;
@@ -10089,12 +10089,14 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 
 		if (slot_start_tli < starttli)
 			starttli = slot_start_tli;
+
+		startpoint = slot_startpoint;
 	}
 
 	if (starttli_p)
 		*starttli_p = starttli;
 
-	return slot_startpoint < startpoint ? slot_startpoint : startpoint;
+	return startpoint;
 }
 
 /* Error cleanup callback for pg_start_backup */
