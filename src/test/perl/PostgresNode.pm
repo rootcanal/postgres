@@ -464,10 +464,85 @@ sub backup
 	my $port        = $self->port;
 	my $name        = $self->name;
 
-	print "# Taking backup $backup_name from node \"$name\"\n";
+	print "# Taking pg_basebackup $backup_name from node \"$name\"\n";
 	TestLib::system_or_bail("pg_basebackup -D $backup_path -p $port -x");
 	print "# Backup finished\n";
 }
+
+=item $node->backup_fs_hot(backup_name)
+
+Create a backup with a filesystem level copy in $node->backup_dir,
+including transaction logs. Archiving must be enabled as pg_start_backup
+and pg_stop_backup are used. This is not checked or enforced.
+
+The backup name is passed as the backup label to pg_start_backup.
+
+=cut
+
+sub backup_fs_hot
+{
+	my ($self, $backup_name) = @_;
+	$self->_backup_fs($backup_name, 1);
+}
+
+=item $node->backup_fs_cold(backup_name)
+
+Create a backup with a filesystem level copy in $node->backup dir,
+including transaction logs. The server must be stopped as no
+attempt to handle concurrent writes is made.
+
+Use backup or backup_fs_hot if you want to back up a running
+server.
+
+=cut
+
+sub backup_fs_cold
+{
+	my ($self, $backup_name) = @_;
+	$self->_backup_fs($backup_name, 0);
+}
+
+
+# Common sub of backup_fs_hot and backup_fs_cold
+sub _backup_fs
+{
+	my ($self, $backup_name, $hot) = @_;
+	my $backup_path = $self->backup_dir . '/' . $backup_name;
+	my $port        = $self->port;
+	my $name        = $self->name;
+
+	print
+	  "# Taking filesystem level backup $backup_name from node \"$name\"\n";
+
+	if ($hot)
+	{
+		my $stdout = $self->safe_psql('postgres',
+			"SELECT * FROM pg_start_backup('$backup_name');");
+		print "# pg_start_backup: $stdout\n";
+	}
+
+	RecursiveCopy::copypath(
+		$self->data_dir,
+		$backup_path,
+		filterfn => sub {
+			my $src = shift;
+			return $src !~ /\/pg_log\// && $src !~ /\/postmaster.pid$/;
+		});
+
+	if ($hot)
+	{
+		# We ignore pg_stop_backup's return value. We also assume archiving
+		# is enabled; otherwise the caller will have to copy the remaining
+		# segments.
+		my $stdout =
+		  $self->safe_psql('postgres', 'SELECT * FROM pg_stop_backup();');
+		print "# pg_stop_backup: $stdout\n";
+	}
+
+	print "# Backup finished\n";
+}
+
+
 
 =pod
 
