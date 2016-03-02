@@ -438,6 +438,18 @@ static const ObjectPropertyType ObjectProperty[] =
 		Anum_pg_type_typacl,
 		ACL_KIND_TYPE,
 		true
+	},
+	{
+		AccessMethodRelationId,
+		AmOidIndexId,
+		AMOID,
+		AMNAME,
+		Anum_pg_am_amname,
+		InvalidAttrNumber,
+		InvalidAttrNumber,
+		InvalidAttrNumber,
+		-1,
+		true
 	}
 };
 
@@ -640,6 +652,10 @@ static const struct object_type_map
 	/* OCLASS_TRANSFORM */
 	{
 		"transform", OBJECT_TRANSFORM
+	},
+	/* OCLASS_AM */
+	{
+		"access method", OBJECT_ACCESS_METHOD,
 	}
 };
 
@@ -674,6 +690,8 @@ static ObjectAddress get_object_address_usermapping(List *objname,
 							   List *objargs, bool missing_ok);
 static ObjectAddress get_object_address_defacl(List *objname, List *objargs,
 						  bool missing_ok);
+static ObjectAddress get_object_address_am(ObjectType objtype, List *objname,
+						bool missing_ok);
 static const ObjectPropertyType *get_object_property_data(Oid class_id);
 
 static void getRelationDescription(StringInfo buffer, Oid relid);
@@ -912,6 +930,9 @@ get_object_address(ObjectType objtype, List *objname, List *objargs,
 			case OBJECT_DEFACL:
 				address = get_object_address_defacl(objname, objargs,
 													missing_ok);
+				break;
+			case OBJECT_ACCESS_METHOD:
+				address = get_object_address_am(objtype, objname, missing_ok);
 				break;
 			default:
 				elog(ERROR, "unrecognized objtype: %d", (int) objtype);
@@ -1489,7 +1510,7 @@ get_object_address_opcf(ObjectType objtype, List *objname, bool missing_ok)
 	ObjectAddress address;
 
 	/* XXX no missing_ok support here */
-	amoid = get_am_oid(strVal(linitial(objname)), false);
+	amoid = get_am_oid(strVal(linitial(objname)), 'i', false);
 	objname = list_copy_tail(objname, 1);
 
 	switch (objtype)
@@ -1511,6 +1532,65 @@ get_object_address_opcf(ObjectType objtype, List *objname, bool missing_ok)
 			address.objectId = InvalidOid;
 			address.objectSubId = 0;
 	}
+
+	return address;
+}
+
+/*
+ * Find the ObjectAddress for an access method.
+ */
+static ObjectAddress
+get_object_address_am(ObjectType objtype, List *objname, bool missing_ok)
+{
+	ObjectAddress	address;
+	char		   *amname, *catalogname;
+	Type		tup;
+
+	switch (list_length(objname))
+	{
+		case 1:
+			amname = strVal(linitial(objname));
+			break;
+		case 2:
+			catalogname = strVal(linitial(objname));
+			amname = strVal(lsecond(objname));
+
+			/*
+			 * We check the catalog name and then ignore it.
+			 */
+			if (strcmp(catalogname, get_database_name(MyDatabaseId)) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				  errmsg("cross-database references are not implemented: %s",
+						 NameListToString(objname))));
+			break;
+		default:
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+				errmsg("improper access method name (too many dotted names): %s",
+					   NameListToString(objname))));
+			break;
+	}
+
+	address.classId = AccessMethodRelationId;
+	address.objectId = InvalidOid;
+	address.objectSubId = 0;
+
+	tup = SearchSysCache1(AMNAME, PointerGetDatum(amname));
+	if (!HeapTupleIsValid(tup))
+	{
+		/* Access method is missing, report error if needed */
+		if (!missing_ok)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("access method \"%s\" does not exist",
+							amname)));
+		return address;
+	}
+
+	/* Access method is found, return its oid */
+	address.objectId = HeapTupleGetOid(tup);
+	ReleaseSysCache(tup);
 
 	return address;
 }
@@ -2179,6 +2259,7 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 			break;
 		case OBJECT_TSPARSER:
 		case OBJECT_TSTEMPLATE:
+		case OBJECT_ACCESS_METHOD:
 			/* We treat these object types as being owned by superusers */
 			if (!superuser_arg(roleid))
 				ereport(ERROR,
@@ -3129,6 +3210,18 @@ getObjectDescription(const ObjectAddress *object)
 				break;
 			}
 
+		case OCLASS_AM:
+			{
+				char	   *amname;
+
+				amname = get_am_name(object->objectId);
+				if (!amname)
+					elog(ERROR, "cache lookup failed for access method %u",
+						 object->objectId);
+				appendStringInfo(&buffer, _("access method %s"), amname);
+				break;
+			}
+
 		default:
 			appendStringInfo(&buffer, "unrecognized object %u %u %d",
 							 object->classId,
@@ -3608,6 +3701,10 @@ getObjectTypeDescription(const ObjectAddress *object)
 
 		case OCLASS_TRANSFORM:
 			appendStringInfoString(&buffer, "transform");
+			break;
+
+		case OCLASS_AM:
+			appendStringInfoString(&buffer, "access method");
 			break;
 
 		default:
@@ -4565,6 +4662,20 @@ getObjectIdentityParts(const ObjectAddress *object,
 				heap_close(transformDesc, AccessShareLock);
 			}
 			break;
+
+		case OCLASS_AM:
+			{
+				char	   *amname;
+
+				amname = get_am_name(object->objectId);
+				if (!amname)
+					elog(ERROR, "cache lookup failed for access method %u",
+						 object->objectId);
+				appendStringInfoString(&buffer, quote_identifier(amname));
+				if (objname)
+					*objname = list_make1(amname);
+				break;
+			}
 
 		default:
 			appendStringInfo(&buffer, "unrecognized object %u %u %d",

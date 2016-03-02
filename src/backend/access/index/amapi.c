@@ -62,6 +62,13 @@ GetIndexAmRoutineByAmId(Oid amoid)
 			 amoid);
 	amform = (Form_pg_am) GETSTRUCT(tuple);
 
+	/* Check if it's index access method */
+	if (amform->amtype != 'i')
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("access method \"%s\" type is not index",
+						NameStr(amform->amname))));
+
 	amhandler = amform->amhandler;
 
 	/* Complain if handler OID is invalid */
