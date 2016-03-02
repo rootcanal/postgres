@@ -29,9 +29,15 @@ ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> [
     [ RESTART [ [ WITH ] <replaceable class="parameter">restart</replaceable> ] ]
     [ CACHE <replaceable class="parameter">cache</replaceable> ] [ [ NO ] CYCLE ]
     [ OWNED BY { <replaceable class="parameter">table_name</replaceable>.<replaceable class="parameter">column_name</replaceable> | NONE } ]
+    [ USING <replaceable class="parameter">access_method</replaceable> [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) ] ]
 ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> OWNER TO { <replaceable class="PARAMETER">new_owner</replaceable> | CURRENT_USER | SESSION_USER }
 ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> RENAME TO <replaceable class="parameter">new_name</replaceable>
 ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> SET SCHEMA <replaceable class="parameter">new_schema</replaceable>
+ALTER SEQUENCE [ IF EXISTS ] <replaceable class="PARAMETER">action</replaceable> [, ... ]
+
+<phrase>where <replaceable class="PARAMETER">action</replaceable> is one of:</phrase>
+    SET ( <replaceable class="PARAMETER">storage_parameter</replaceable> = <replaceable class="PARAMETER">value</replaceable> [, ... ] )
+    RESET ( <replaceable class="PARAMETER">storage_parameter</replaceable> [, ... ] )
 </synopsis>
  </refsynopsisdiv>
 
@@ -221,6 +227,24 @@ ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> S
    </varlistentry>
 
    <varlistentry>
+    <term><literal>USING</literal> <replaceable class="parameter">access_method</replaceable></term>
+    <listitem>
+     <para>
+      The <literal>USING</literal> option specifies which sequence access
+      method will be used when generating the sequence numbers.
+     </para>
+     <para>
+      When the <literal>RESTART WITH <replaceable
+      class="parameter">restart</replaceable></literal> parameter is also
+      given, it will be used as a starting value for the new access method.
+      Otherwise the <function>nextval</> function will be called with the old
+      access method and the result will be used as start value for the new
+      access method.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><replaceable class="PARAMETER">new_owner</replaceable></term>
     <listitem>
      <para>
@@ -244,6 +268,37 @@ ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> S
      <para>
       The new schema for the sequence.
      </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET ( <replaceable class="PARAMETER">storage_parameter</replaceable> = <replaceable class="PARAMETER">value</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>
+      This clause changes one or more storage parameters for the sequence
+      access method.
+     </para>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESET ( <replaceable class="PARAMETER">storage_parameter</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>
+      This clause resets one or more storage parameters to their defaults.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] )</literal></term>
+    <listitem>
+     <para>
+      This clause specifies optional storage parameters for the new sequence
+      access method.
+     </para>
+
     </listitem>
    </varlistentry>
 

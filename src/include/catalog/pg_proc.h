@@ -1759,6 +1759,10 @@ DATA(insert OID = 1765 (  setval			PGNSP PGUID 12 1 0 0 0 f f f f t f v u 3 0 20
 DESCR("set sequence value and is_called status");
 DATA(insert OID = 3078 (  pg_sequence_parameters	PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 2249 "26" "{26,20,20,20,20,16}" "{i,o,o,o,o,o}" "{sequence_oid,start_value,minimum_value,maximum_value,increment,cycle_option}" _null_ _null_ pg_sequence_parameters _null_ _null_ _null_));
 DESCR("sequence parameters, for use by information schema");
+DATA(insert OID = 3377 (  pg_sequence_get_state		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 25 "2205" _null_ _null_ _null_ _null_ _null_ pg_sequence_get_state _null_ _null_ _null_ ));
+DESCR("Dump state of a sequence");
+DATA(insert OID = 3378 (  pg_sequence_set_state		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 2278 "2205 25" _null_ _null_ _null_ _null_ _null_ pg_sequence_set_state _null_ _null_ _null_ ));
+DESCR("Restore state of a sequence");
 
 DATA(insert OID = 1579 (  varbit_in			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 3 0 1562 "2275 26 23" _null_ _null_ _null_ _null_ _null_ varbit_in _null_ _null_ _null_ ));
 DESCR("I/O");
@@ -3683,6 +3687,10 @@ DATA(insert OID = 326  (  index_am_handler_in	PGNSP PGUID 12 1 0 0 0 f f f f f f
 DESCR("I/O");
 DATA(insert OID = 327  (  index_am_handler_out	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "325" _null_ _null_ _null_ _null_ _null_ index_am_handler_out _null_ _null_ _null_ ));
 DESCR("I/O");
+DATA(insert OID = 6021  (  seq_am_handler_in	PGNSP PGUID 12 1 0 0 0 f f f f f f i s 1 0 6020 "2275" _null_ _null_ _null_ _null_ _null_ seq_am_handler_in _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 6022 (  seq_am_handler_out	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "6020" _null_ _null_ _null_ _null_ _null_ seq_am_handler_out _null_ _null_ _null_ ));
+DESCR("I/O");
 DATA(insert OID = 3311 (  tsm_handler_in	PGNSP PGUID 12 1 0 0 0 f f f f f f i s 1 0 3310 "2275" _null_ _null_ _null_ _null_ _null_ tsm_handler_in _null_ _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 3312 (  tsm_handler_out	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "3310" _null_ _null_ _null_ _null_ _null_ tsm_handler_out _null_ _null_ _null_ ));
@@ -3693,6 +3701,10 @@ DATA(insert OID = 3313 (  bernoulli			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0
 DESCR("BERNOULLI tablesample method handler");
 DATA(insert OID = 3314 (  system			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3310 "2281" _null_ _null_ _null_ _null_ _null_ tsm_system_handler _null_ _null_ _null_ ));
 DESCR("SYSTEM tablesample method handler");
+
+/* sequence access method handlers */
+DATA(insert OID = 6024 (  seqam_local_handler	   PGNSP PGUID 12 1 0 0 0 f f f f f f v s 1 0 6020 "2281" _null_ _null_ _null_ _null_ _null_ seqam_local_handler _null_ _null_ _null_ ));
+DESCR("Local SequenceAM handler");
 
 /* cryptographic */
 DATA(insert OID =  2311 (  md5	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "25" _null_ _null_ _null_ _null_ _null_ md5_text _null_ _null_ _null_ ));
@@ -5215,6 +5227,12 @@ DESCR("row security for current context active on table by table name");
 /* pg_config */
 DATA(insert OID = 3400 ( pg_config PGNSP PGUID 12 1 23 0 0 f f f f t t i r 0 0 2249 "" "{25,25}" "{o,o}" "{name,setting}" _null_ _null_ pg_config _null_ _null_ _null_ ));
 DESCR("pg_config binary as a function");
+
+/* Sequence AM */
+DATA(insert OID = 6027 (  seqam_local_state_in		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 6025 "2275" _null_ _null_ _null_ _null_ _null_ seqam_local_state_in _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 6028 (  seqam_local_state_out		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "6025" _null_ _null_ _null_ _null_ _null_ seqam_local_state_out _null_ _null_ _null_ ));
+DESCR("I/O");
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result

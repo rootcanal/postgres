@@ -29,6 +29,7 @@
 #include "access/amapi.h"
 #include "access/htup_details.h"
 #include "access/reloptions.h"
+#include "access/seqamapi.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/index.h"
@@ -456,6 +457,8 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 		seqstmt = makeNode(CreateSeqStmt);
 		seqstmt->sequence = makeRangeVar(snamespace, sname, -1);
 		seqstmt->options = NIL;
+		seqstmt->amoptions = NIL;
+		seqstmt->accessMethod = NULL;
 
 		/*
 		 * If this is ALTER ADD COLUMN, make sure the sequence will be owned

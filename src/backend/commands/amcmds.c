@@ -16,6 +16,7 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/seqamapi.h"
 #include "access/xact.h"
 #include "catalog/binary_upgrade.h"
 #include "catalog/catalog.h"
@@ -130,6 +131,17 @@ CreateAccessMethod(CreateAmStmt *stmt)
 	 */
 	switch(stmt->amtype)
 	{
+		case AMTYPE_SEQUENCE:
+			{
+				SeqAmRoutine *routine;
+
+				amhandler = lookup_am_handler_func(stmt->handler_name,
+												   SEQ_AM_HANDLEROID);
+
+				routine = GetSeqAmRoutine(amhandler);
+				ValidateSeqAmRoutine(routine);
+			}
+			break;
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
@@ -207,6 +219,8 @@ get_am_type_string(char amtype)
 {
 	switch (amtype)
 	{
+		case AMTYPE_SEQUENCE:
+			return "sequence";
 		default:
 			elog(ERROR, "invalid access method type \"%c\"", amtype);
 	}

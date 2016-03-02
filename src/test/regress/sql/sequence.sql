@@ -67,11 +67,11 @@ SELECT currval('sequence_test'::text);
 SELECT currval('sequence_test'::regclass);
 SELECT setval('sequence_test'::text, 32);
 SELECT nextval('sequence_test'::regclass);
-SELECT setval('sequence_test'::text, 99, false);
+SELECT pg_sequence_set_state('sequence_test'::text, '(99,false)');
 SELECT nextval('sequence_test'::regclass);
 SELECT setval('sequence_test'::regclass, 32);
 SELECT nextval('sequence_test'::text);
-SELECT setval('sequence_test'::regclass, 99, false);
+SELECT pg_sequence_set_state('sequence_test'::regclass, '(99,false)');
 SELECT nextval('sequence_test'::text);
 DISCARD SEQUENCES;
 SELECT currval('sequence_test'::regclass);
@@ -137,6 +137,12 @@ ALTER SEQUENCE sequence_test2 RESTART;
 SELECT nextval('sequence_test2');
 SELECT nextval('sequence_test2');
 SELECT nextval('sequence_test2');
+
+-- Sequence Acess Method
+CREATE SEQUENCE myamseq USING local WITH (foo = 'bar');
+CREATE SEQUENCE myamseq USING local;
+ALTER SEQUENCE myamseq SET (foo = 'baz');
+DROP SEQUENCE myamseq;
 
 -- Information schema
 SELECT * FROM information_schema.sequences WHERE sequence_name IN

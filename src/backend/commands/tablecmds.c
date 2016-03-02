@@ -19,6 +19,7 @@
 #include "access/multixact.h"
 #include "access/reloptions.h"
 #include "access/relscan.h"
+#include "access/seqamapi.h"
 #include "access/sysattr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
@@ -269,6 +270,7 @@ struct DropRelationCallbackState
 #define		ATT_INDEX				0x0008
 #define		ATT_COMPOSITE_TYPE		0x0010
 #define		ATT_FOREIGN_TABLE		0x0020
+#define		ATT_SEQUENCE			0x0040
 
 static void truncate_check_rel(Relation rel);
 static List *MergeAttributes(List *schema, List *supers, char relpersistence,
@@ -454,7 +456,7 @@ static void RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid,
  * ----------------------------------------------------------------
  */
 ObjectAddress
-DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
+DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId, Oid relamid,
 			   ObjectAddress *typaddress)
 {
 	char		relname[NAMEDATALEN];
@@ -473,7 +475,6 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	Datum		reloptions;
 	ListCell   *listptr;
 	AttrNumber	attnum;
-	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
 	Oid			ofTypeId;
 	ObjectAddress address;
 
@@ -551,13 +552,29 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	/*
 	 * Parse and validate reloptions, if any.
 	 */
-	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL, validnsps,
-									 true, false);
+	if (relkind == RELKIND_SEQUENCE)
+	{
+		SeqAmRoutine *seqam;
 
-	if (relkind == RELKIND_VIEW)
-		(void) view_reloptions(reloptions, true);
+		Assert(relamid != InvalidOid);
+		seqam = GetSeqAmRoutineByAMId(relamid);
+		reloptions = transformRelOptions((Datum) 0, stmt->options, NULL,
+										 NULL, true, false);
+
+		(void) am_reloptions(seqam->amoptions, reloptions, true);
+	}
 	else
-		(void) heap_reloptions(relkind, reloptions, true);
+	{
+		static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+
+		Assert(relamid == InvalidOid);
+		reloptions = transformRelOptions((Datum) 0, stmt->options, NULL,
+										 validnsps, true, false);
+		if (relkind == RELKIND_VIEW)
+			(void) view_reloptions(reloptions, true);
+		else
+			(void) heap_reloptions(relkind, reloptions, true);
+	}
 
 	if (stmt->ofTypename)
 	{
@@ -678,6 +695,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 										  true,
 										  allowSystemTableMods,
 										  false,
+										  relamid,
 										  typaddress);
 
 	/* Store inheritance information for new rel. */
@@ -3308,7 +3326,8 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_SetRelOptions:	/* SET (...) */
 		case AT_ResetRelOptions:		/* RESET (...) */
 		case AT_ReplaceRelOptions:		/* reset them all, then set just these */
-			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_MATVIEW |
+								ATT_INDEX | ATT_SEQUENCE);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -4308,6 +4327,9 @@ ATSimplePermissions(Relation rel, int allowed_targets)
 		case RELKIND_FOREIGN_TABLE:
 			actual_target = ATT_FOREIGN_TABLE;
 			break;
+		case RELKIND_SEQUENCE:
+			actual_target = ATT_SEQUENCE;
+			break;
 		default:
 			actual_target = 0;
 			break;
@@ -4351,8 +4373,8 @@ ATWrongRelkindError(Relation rel, int allowed_targets)
 		case ATT_TABLE | ATT_VIEW | ATT_FOREIGN_TABLE:
 			msg = _("\"%s\" is not a table, view, or foreign table");
 			break;
-		case ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX:
-			msg = _("\"%s\" is not a table, view, materialized view, or index");
+		case ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX | ATT_SEQUENCE:
+			msg = _("\"%s\" is not a table, view, materialized view, index or sequence");
 			break;
 		case ATT_TABLE | ATT_MATVIEW:
 			msg = _("\"%s\" is not a table or materialized view");
@@ -9403,12 +9425,15 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 			(void) view_reloptions(newOptions, true);
 			break;
 		case RELKIND_INDEX:
-			(void) index_reloptions(rel->rd_amroutine->amoptions, newOptions, true);
+			(void) am_reloptions(rel->rd_amroutine->amoptions, newOptions, true);
+			break;
+		case RELKIND_SEQUENCE:
+			(void) am_reloptions(rel->rd_seqamroutine->amoptions, newOptions, true);
 			break;
 		default:
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table, view, materialized view, index, or TOAST table",
+					 errmsg("\"%s\" is not a table, view, materialized view, index, sequence, or TOAST table",
 							RelationGetRelationName(rel))));
 			break;
 	}

@@ -385,7 +385,8 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	/*
 	 * Actually create the target table
 	 */
-	intoRelationAddr = DefineRelation(create, relkind, InvalidOid, NULL);
+	intoRelationAddr = DefineRelation(create, relkind, InvalidOid, InvalidOid,
+									  NULL);
 
 	/*
 	 * If necessary, create a TOAST table for the target table.  Note that

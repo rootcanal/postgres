@@ -19,20 +19,18 @@
 #include "lib/stringinfo.h"
 #include "nodes/parsenodes.h"
 #include "storage/relfilenode.h"
-
+#include "access/htup_details.h"
 
 typedef struct FormData_pg_sequence
 {
-	NameData	sequence_name;
-	int64		last_value;
 	int64		start_value;
 	int64		increment_by;
 	int64		max_value;
 	int64		min_value;
 	int64		cache_value;
-	int64		log_cnt;
 	bool		is_cycled;
-	bool		is_called;
+	/* amstate follows */
+	char		amstate[FLEXIBLE_ARRAY_MEMBER];
 } FormData_pg_sequence;
 
 typedef FormData_pg_sequence *Form_pg_sequence;
@@ -41,19 +39,16 @@ typedef FormData_pg_sequence *Form_pg_sequence;
  * Columns of a sequence relation
  */
 
-#define SEQ_COL_NAME			1
-#define SEQ_COL_LASTVAL			2
-#define SEQ_COL_STARTVAL		3
-#define SEQ_COL_INCBY			4
-#define SEQ_COL_MAXVALUE		5
-#define SEQ_COL_MINVALUE		6
-#define SEQ_COL_CACHE			7
-#define SEQ_COL_LOG				8
-#define SEQ_COL_CYCLE			9
-#define SEQ_COL_CALLED			10
+#define SEQ_COL_STARTVAL		1
+#define SEQ_COL_INCBY			2
+#define SEQ_COL_MAXVALUE		3
+#define SEQ_COL_MINVALUE		4
+#define SEQ_COL_CACHE			5
+#define SEQ_COL_CYCLE			6
+#define SEQ_COL_AMSTATE			7
 
-#define SEQ_COL_FIRSTCOL		SEQ_COL_NAME
-#define SEQ_COL_LASTCOL			SEQ_COL_CALLED
+#define SEQ_COL_FIRSTCOL		SEQ_COL_STARTVAL
+#define SEQ_COL_LASTCOL			SEQ_COL_AMSTATE
 
 /* XLOG stuff */
 #define XLOG_SEQ_LOG			0x00
@@ -72,6 +67,8 @@ extern Datum setval3_oid(PG_FUNCTION_ARGS);
 extern Datum lastval(PG_FUNCTION_ARGS);
 
 extern Datum pg_sequence_parameters(PG_FUNCTION_ARGS);
+extern Datum pg_sequence_get_state(PG_FUNCTION_ARGS);
+extern Datum pg_sequence_set_state(PG_FUNCTION_ARGS);
 
 extern ObjectAddress DefineSequence(CreateSeqStmt *stmt);
 extern ObjectAddress AlterSequence(AlterSeqStmt *stmt);

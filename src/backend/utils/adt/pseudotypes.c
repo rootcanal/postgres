@@ -399,6 +399,31 @@ index_am_handler_out(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();			/* keep compiler quiet */
 }
 
+/*
+ * seq_am_handler_int		- input routine for pseudo-type SEQ_AM_HANDLER.
+ */
+Datum
+seq_am_handler_in(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("cannot accept a value of type seq_am_handler")));
+
+	PG_RETURN_VOID();			/* keep compiler quiet */
+}
+
+/*
+ * seq_am_handler_out		- output routine for pseudo-type SEQ_AM_HANDLER.
+ */
+Datum
+seq_am_handler_out(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("cannot display a value of type seq_am_handler")));
+
+	PG_RETURN_VOID();			/* keep compiler quiet */
+}
 
 /*
  * tsm_handler_in		- input routine for pseudo-type TSM_HANDLER.

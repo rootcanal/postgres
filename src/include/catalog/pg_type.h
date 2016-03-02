@@ -696,10 +696,17 @@ DATA(insert OID = 3115 ( fdw_handler	PGNSP PGUID  4 t p P f t \054 0 0 0 fdw_han
 #define FDW_HANDLEROID	3115
 DATA(insert OID = 325 ( index_am_handler	PGNSP PGUID  4 t p P f t \054 0 0 0 index_am_handler_in index_am_handler_out - - - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
 #define INDEX_AM_HANDLEROID	325
+DATA(insert OID = 6020 ( seq_am_handler	PGNSP PGUID  4 t p P f t \054 0 0 0 seq_am_handler_in seq_am_handler_out - - - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
+#define SEQ_AM_HANDLEROID	6020
 DATA(insert OID = 3310 ( tsm_handler	PGNSP PGUID  4 t p P f t \054 0 0 0 tsm_handler_in tsm_handler_out - - - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
 #define TSM_HANDLEROID	3310
 DATA(insert OID = 3831 ( anyrange		PGNSP PGUID  -1 f p P f t \054 0 0 0 anyrange_in anyrange_out - - - - - d x f 0 -1 0 0 _null_ _null_ _null_ ));
 #define ANYRANGEOID		3831
+
+/* Sequence AM composite types */
+DATA(insert OID = 6025 ( seqam_local_state	PGNSP PGUID 16 f b U f t \054 0 0 6026 seqam_local_state_in seqam_local_state_out - - - - - c p f 0 -1 0 0 _null_ _null_ _null_ ));
+#define SEQAMLOCALSTATEOID 6025
+DATA(insert OID = 6026 ( _seqam_local_state	PGNSP PGUID -1 f b A f t \054 0 6025 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
 
 
 /*

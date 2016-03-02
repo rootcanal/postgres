@@ -51,6 +51,7 @@
 
 #include "catalog/index.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_trigger.h"
 #include "commands/defrem.h"
 #include "commands/trigger.h"
@@ -263,7 +264,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		CreateMatViewStmt RefreshMatViewStmt
+		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt DropAmStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -604,7 +605,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
-	MAPPING MATCH MATERIALIZED MAXVALUE MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P
+	MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEXT NO NONE
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
@@ -789,6 +791,7 @@ stmt :
 			| CommentStmt
 			| ConstraintsSetStmt
 			| CopyStmt
+			| CreateAmStmt
 			| CreateAsStmt
 			| CreateAssertStmt
 			| CreateCastStmt
@@ -823,6 +826,7 @@ stmt :
 			| DeleteStmt
 			| DiscardStmt
 			| DoStmt
+			| DropAmStmt
 			| DropAssertStmt
 			| DropCastStmt
 			| DropFdwStmt
@@ -3585,7 +3589,33 @@ CreateSeqStmt:
 					CreateSeqStmt *n = makeNode(CreateSeqStmt);
 					$4->relpersistence = $2;
 					n->sequence = $4;
+					n->accessMethod = NULL;
 					n->options = $5;
+					n->amoptions = NIL;
+					n->ownerId = InvalidOid;
+					$$ = (Node *)n;
+				}
+			| CREATE OptTemp SEQUENCE qualified_name OptSeqOptList
+				USING access_method
+				{
+					CreateSeqStmt *n = makeNode(CreateSeqStmt);
+					$4->relpersistence = $2;
+					n->sequence = $4;
+					n->accessMethod = $7;
+					n->options = $5;
+					n->amoptions = NIL;
+					n->ownerId = InvalidOid;
+					$$ = (Node *)n;
+				}
+			| CREATE OptTemp SEQUENCE qualified_name OptSeqOptList
+				USING access_method WITH reloptions
+				{
+					CreateSeqStmt *n = makeNode(CreateSeqStmt);
+					$4->relpersistence = $2;
+					n->sequence = $4;
+					n->accessMethod = $7;
+					n->options = $5;
+					n->amoptions = $9;
 					n->ownerId = InvalidOid;
 					n->if_not_exists = false;
 					$$ = (Node *)n;
@@ -3607,7 +3637,31 @@ AlterSeqStmt:
 				{
 					AlterSeqStmt *n = makeNode(AlterSeqStmt);
 					n->sequence = $3;
+					n->accessMethod = NULL;
 					n->options = $4;
+					n->amoptions = NIL;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			| ALTER SEQUENCE qualified_name OptSeqOptList
+				USING access_method
+				{
+					AlterSeqStmt *n = makeNode(AlterSeqStmt);
+					n->sequence = $3;
+					n->accessMethod = $6;
+					n->options = $4;
+					n->amoptions = NIL;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
+			| ALTER SEQUENCE qualified_name OptSeqOptList
+				USING access_method WITH reloptions
+				{
+					AlterSeqStmt *n = makeNode(AlterSeqStmt);
+					n->sequence = $3;
+					n->accessMethod = $6;
+					n->options = $4;
+					n->amoptions = $8;
 					n->missing_ok = false;
 					$$ = (Node *)n;
 				}
@@ -3615,11 +3669,34 @@ AlterSeqStmt:
 				{
 					AlterSeqStmt *n = makeNode(AlterSeqStmt);
 					n->sequence = $5;
+					n->accessMethod = NULL;
 					n->options = $6;
+					n->amoptions = NIL;
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
-
+			| ALTER SEQUENCE IF_P EXISTS qualified_name OptSeqOptList
+				USING access_method
+				{
+					AlterSeqStmt *n = makeNode(AlterSeqStmt);
+					n->sequence = $5;
+					n->accessMethod = $8;
+					n->options = $6;
+					n->amoptions = NIL;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
+			| ALTER SEQUENCE IF_P EXISTS qualified_name OptSeqOptList
+				USING access_method WITH reloptions
+				{
+					AlterSeqStmt *n = makeNode(AlterSeqStmt);
+					n->sequence = $5;
+					n->accessMethod = $8;
+					n->options = $6;
+					n->amoptions = $10;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
 		;
 
 OptSeqOptList: SeqOptList							{ $$ = $1; }
@@ -3678,7 +3755,7 @@ SeqOptElem: CACHE NumericOnly
 				{
 					$$ = makeDefElem("restart", (Node *)$3);
 				}
-		;
+			;
 
 opt_by:		BY				{}
 			| /* empty */	{}
@@ -4705,6 +4782,56 @@ row_security_cmd:
 		|	UPDATE			{ $$ = "update"; }
 		|	DELETE_P		{ $$ = "delete"; }
 		;
+
+/*****************************************************************************
+ *
+ *		QUERY:
+ *             CREATE ACCESS METHOD name TYPE type_name HANDLER handler_name
+ *
+ *****************************************************************************/
+
+CreateAmStmt:
+			CREATE ACCESS METHOD name TYPE_P SEQUENCE HANDLER handler_name
+				{
+					CreateAmStmt *n = makeNode(CreateAmStmt);
+					n->amname = $4;
+					n->handler_name = $8;
+					n->amtype = AMTYPE_SEQUENCE;
+					$$ = (Node *) n;
+				}
+		;
+
+/*****************************************************************************
+ *
+ *		QUERY :
+ *				DROP ACCESS METHOD name
+ *
+ ****************************************************************************/
+
+DropAmStmt: DROP ACCESS METHOD name opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_ACCESS_METHOD;
+					n->objects = list_make1(list_make1(makeString($4)));
+					n->arguments = NIL;
+					n->missing_ok = false;
+					n->behavior = $5;
+					n->concurrent = false;
+					$$ = (Node *) n;
+				}
+				|  DROP ACCESS METHOD IF_P EXISTS name opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_ACCESS_METHOD;
+					n->objects = list_make1(list_make1(makeString($6)));
+					n->arguments = NIL;
+					n->missing_ok = true;
+					n->behavior = $7;
+					n->concurrent = false;
+					$$ = (Node *) n;
+				}
+		;
+
 
 /*****************************************************************************
  *
@@ -13778,6 +13905,7 @@ unreserved_keyword:
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| METHOD
 			| MINUTE_P
 			| MINVALUE
 			| MODE

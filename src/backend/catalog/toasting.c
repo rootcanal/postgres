@@ -291,6 +291,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 										   false,
 										   true,
 										   true,
+										   InvalidOid,
 										   NULL);
 	Assert(toast_relid != InvalidOid);
 

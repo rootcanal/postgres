@@ -888,8 +888,8 @@ untransformRelOptions(Datum options)
  * instead.
  *
  * tupdesc is pg_class' tuple descriptor.  amoptions is a pointer to the index
- * AM's options parser function in the case of a tuple corresponding to an
- * index, or NULL otherwise.
+ * or sequence AM's options parser function in the case of a tuple corresponding
+ * to an index or sequence respectively, or NULL otherwise.
  */
 bytea *
 extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
@@ -921,7 +921,8 @@ extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 			options = view_reloptions(datum, false);
 			break;
 		case RELKIND_INDEX:
-			options = index_reloptions(amoptions, datum, false);
+		case RELKIND_SEQUENCE:
+			options = am_reloptions(amoptions, datum, false);
 			break;
 		case RELKIND_FOREIGN_TABLE:
 			options = NULL;
@@ -1374,14 +1375,14 @@ heap_reloptions(char relkind, Datum reloptions, bool validate)
 
 
 /*
- * Parse options for indexes.
+ * Parse options for access methods.
  *
- *	amoptions	index AM's option parser function
+ *	amoptions	AM's option parser function
  *	reloptions	options as text[] datum
  *	validate	error flag
  */
 bytea *
-index_reloptions(amoptions_function amoptions, Datum reloptions, bool validate)
+am_reloptions(amoptions_function amoptions, Datum reloptions, bool validate)
 {
 	Assert(amoptions != NULL);
 

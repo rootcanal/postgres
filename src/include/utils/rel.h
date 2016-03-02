@@ -106,13 +106,18 @@ typedef struct RelationData
 	 */
 	bytea	   *rd_options;		/* parsed pg_class.reloptions */
 
+	Oid			rd_amhandler;	/* OID of access method's handler function */
+
+	/* These are non-NULL only for a sequence relation */
+	struct SeqAmRoutine *rd_seqamroutine;
+
 	/* These are non-NULL only for an index relation: */
 	Form_pg_index rd_index;		/* pg_index tuple describing this index */
 	/* use "struct" here to avoid needing to include htup.h: */
 	struct HeapTupleData *rd_indextuple;		/* all of pg_index tuple */
 
 	/*
-	 * index access support info (used only for an index relation)
+	 * index access support info (used only for index relations)
 	 *
 	 * Note: only default support procs for each opclass are cached, namely
 	 * those with lefttype and righttype equal to the opclass's opcintype. The
@@ -126,7 +131,6 @@ typedef struct RelationData
 	 * rd_indexcxt.  A relcache reset will include freeing that chunk and
 	 * setting rd_amcache = NULL.
 	 */
-	Oid			rd_amhandler;	/* OID of index AM's handler function */
 	MemoryContext rd_indexcxt;	/* private memory cxt for this stuff */
 	/* use "struct" here to avoid needing to include amapi.h: */
 	struct IndexAmRoutine *rd_amroutine;		/* index AM's API struct */

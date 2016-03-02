@@ -28,6 +28,7 @@
 
 #include "access/commit_ts.h"
 #include "access/gin.h"
+#include "access/seqamapi.h"
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"

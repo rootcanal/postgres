@@ -1403,30 +1403,6 @@ describeOneTableDetails(const char *schemaname,
 	res = NULL;
 
 	/*
-	 * If it's a sequence, fetch its values and store into an array that will
-	 * be used later.
-	 */
-	if (tableinfo.relkind == 'S')
-	{
-		printfPQExpBuffer(&buf, "SELECT * FROM %s", fmtId(schemaname));
-		/* must be separate because fmtId isn't reentrant */
-		appendPQExpBuffer(&buf, ".%s;", fmtId(relationname));
-
-		res = PSQLexec(buf.data);
-		if (!res)
-			goto error_return;
-
-		seq_values = pg_malloc((PQnfields(res) + 1) * sizeof(*seq_values));
-
-		for (i = 0; i < PQnfields(res); i++)
-			seq_values[i] = pg_strdup(PQgetvalue(res, 0, i));
-		seq_values[i] = NULL;
-
-		PQclear(res);
-		res = NULL;
-	}
-
-	/*
 	 * Get column info
 	 *
 	 * You need to modify value of "firstvcol" which will be defined below if
@@ -1470,12 +1446,54 @@ describeOneTableDetails(const char *schemaname,
 
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_attribute a");
 	appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
+
+	/*
+	 * For sequence, fetch only the common column unless verbose was specified.
+	 * Note that this is change from pre9.5 versions.
+	 */
+	if (tableinfo.relkind == 'S')
+		appendPQExpBufferStr(&buf, " AND attname <> 'amdata'");
+
 	appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
+
 
 	res = PSQLexec(buf.data);
 	if (!res)
 		goto error_return;
 	numrows = PQntuples(res);
+
+	/*
+	 * If it's a sequence, fetch its values and store into an array that will
+	 * be used later.
+	 */
+	if (tableinfo.relkind == 'S')
+	{
+		PGresult   *result;
+
+		/*
+		 * Use column names from the column info query, to automatically skip
+		 * unwanted columns.
+		 */
+		printfPQExpBuffer(&buf, "SELECT ");
+		for (i = 0; i < numrows; i++)
+			appendPQExpBuffer(&buf, i > 0 ? ", %s" : "%s", fmtId(PQgetvalue(res, i, 0)));
+		appendPQExpBuffer(&buf, " FROM %s",
+						  fmtId(schemaname));
+		/* must be separate because fmtId isn't reentrant */
+		appendPQExpBuffer(&buf, ".%s;", fmtId(relationname));
+
+		result = PSQLexec(buf.data);
+		if (!result)
+			goto error_return;
+
+		seq_values = pg_malloc((PQnfields(result) + 1) * sizeof(*seq_values));
+
+		for (i = 0; i < PQnfields(result); i++)
+			seq_values[i] = pg_strdup(PQgetvalue(result, 0, i));
+		seq_values[i] = NULL;
+
+		PQclear(result);
+	}
 
 	/* Make title */
 	switch (tableinfo.relkind)
@@ -1805,6 +1823,8 @@ describeOneTableDetails(const char *schemaname,
 						  oid);
 
 		result = PSQLexec(buf.data);
+
+		/* Same logic as above, only print result when we get one row. */
 		if (!result)
 			goto error_return;
 		else if (PQntuples(result) == 1)
@@ -1814,12 +1834,56 @@ describeOneTableDetails(const char *schemaname,
 			printTableAddFooter(&cont, buf.data);
 		}
 
+		PQclear(result);
+
+		/* Get the Access Method name for the sequence */
+		printfPQExpBuffer(&buf, "SELECT a.amname\n"
+								"FROM pg_catalog.pg_am a, pg_catalog.pg_class c\n"
+								"WHERE c.relam = a.oid AND c.oid = %s", oid);
+
+		result = PSQLexec(buf.data);
+
 		/*
 		 * If we get no rows back, don't show anything (obviously). We should
 		 * never get more than one row back, but if we do, just ignore it and
 		 * don't print anything.
 		 */
+		if (!result)
+			goto error_return;
+		else if (PQntuples(result) == 1)
+		{
+			printfPQExpBuffer(&buf, _("Access Method: %s"),
+							  PQgetvalue(result, 0, 0));
+			printTableAddFooter(&cont, buf.data);
+		}
+
 		PQclear(result);
+
+		if (verbose)
+		{
+			/* Get the Access Method state */
+			printfPQExpBuffer(&buf,
+							  "SELECT pg_catalog.pg_sequence_get_state('%s');",
+							  oid);
+
+			result = PSQLexec(buf.data);
+
+			/*
+			 * If we get no rows back, don't show anything (obviously). We should
+			 * never get more than one row back, but if we do, just ignore it and
+			 * don't print anything.
+			 */
+			if (!result)
+				goto error_return;
+			else if (PQntuples(result) == 1)
+			{
+				printfPQExpBuffer(&buf, _("Access Method State: %s"),
+								  PQgetvalue(result, 0, 0));
+				printTableAddFooter(&cont, buf.data);
+			}
+
+			PQclear(result);
+		}
 	}
 	else if (tableinfo.relkind == 'r' || tableinfo.relkind == 'm' ||
 			 tableinfo.relkind == 'f')

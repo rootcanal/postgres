@@ -129,10 +129,10 @@ SELECT nextval('sequence_test'::regclass);
       33
 (1 row)
 
-SELECT setval('sequence_test'::text, 99, false);
- setval 
---------
-     99
+SELECT pg_sequence_set_state('sequence_test'::text, '(99,false)');
+ pg_sequence_set_state 
+-----------------------
+ 
 (1 row)
 
 SELECT nextval('sequence_test'::regclass);
@@ -153,10 +153,10 @@ SELECT nextval('sequence_test'::text);
       33
 (1 row)
 
-SELECT setval('sequence_test'::regclass, 99, false);
- setval 
---------
-     99
+SELECT pg_sequence_set_state('sequence_test'::regclass, '(99,false)');
+ pg_sequence_set_state 
+-----------------------
+ 
 (1 row)
 
 SELECT nextval('sequence_test'::text);
@@ -173,9 +173,9 @@ DROP SEQUENCE sequence_test;
 CREATE SEQUENCE foo_seq;
 ALTER TABLE foo_seq RENAME TO foo_seq_new;
 SELECT * FROM foo_seq_new;
- sequence_name | last_value | start_value | increment_by |      max_value      | min_value | cache_value | log_cnt | is_cycled | is_called 
----------------+------------+-------------+--------------+---------------------+-----------+-------------+---------+-----------+-----------
- foo_seq       |          1 |           1 |            1 | 9223372036854775807 |         1 |           1 |       0 | f         | f
+ start_value | increment_by |      max_value      | min_value | cache_value | is_cycled | amstate 
+-------------+--------------+---------------------+-----------+-------------+-----------+---------
+           1 |            1 | 9223372036854775807 |         1 |           1 | f         | (1,f,0)
 (1 row)
 
 SELECT nextval('foo_seq_new');
@@ -191,9 +191,9 @@ SELECT nextval('foo_seq_new');
 (1 row)
 
 SELECT * FROM foo_seq_new;
- sequence_name | last_value | start_value | increment_by |      max_value      | min_value | cache_value | log_cnt | is_cycled | is_called 
----------------+------------+-------------+--------------+---------------------+-----------+-------------+---------+-----------+-----------
- foo_seq       |          2 |           1 |            1 | 9223372036854775807 |         1 |           1 |      31 | f         | t
+ start_value | increment_by |      max_value      | min_value | cache_value | is_cycled | amstate  
+-------------+--------------+---------------------+-----------+-------------+-----------+----------
+           1 |            1 | 9223372036854775807 |         1 |           1 | f         | (2,t,31)
 (1 row)
 
 DROP SEQUENCE foo_seq_new;
@@ -300,6 +300,13 @@ SELECT nextval('sequence_test2');
        5
 (1 row)
 
+-- Sequence Acess Method
+CREATE SEQUENCE myamseq USING local WITH (foo = 'bar');
+ERROR:  local sequence does not accept any storage parameters
+CREATE SEQUENCE myamseq USING local;
+ALTER SEQUENCE myamseq SET (foo = 'baz');
+ERROR:  local sequence does not accept any storage parameters
+DROP SEQUENCE myamseq;
 -- Information schema
 SELECT * FROM information_schema.sequences WHERE sequence_name IN
   ('sequence_test2', 'serialtest2_f2_seq', 'serialtest2_f3_seq',

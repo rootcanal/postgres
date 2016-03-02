@@ -39,6 +39,7 @@ CATALOG(pg_am,2601)
 	/*----------
 	 * Type of access method. Possible values are
 	 *		'i': Index access method
+	 *		'S': Sequence access method
 	 *----------
 	 */
 	char		amtype;
@@ -61,6 +62,7 @@ typedef FormData_pg_am *Form_pg_am;
 #define Anum_pg_am_amtype				3
 
 #define		AMTYPE_INDEX				'i'		/* index */
+#define		AMTYPE_SEQUENCE				'S'		/* sequence */
 
 /* ----------------
  *		initial contents of pg_am
@@ -85,5 +87,9 @@ DESCR("SP-GiST index access method");
 DATA(insert OID = 3580 (  brin		brinhandler	i ));
 DESCR("block range index (BRIN) access method");
 #define BRIN_AM_OID 3580
+
+DATA(insert OID = 6023 (  local		seqam_local_handler	S ));
+DESCR("local sequence access method");
+#define LOCAL_SEQAM_OID 6023
 
 #endif   /* PG_AM_H */

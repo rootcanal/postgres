@@ -461,6 +461,7 @@ typedef enum NodeTag
 	T_InlineCodeBlock,			/* in nodes/parsenodes.h */
 	T_FdwRoutine,				/* in foreign/fdwapi.h */
 	T_IndexAmRoutine,			/* in access/amapi.h */
+	T_SeqAmRoutine,				/* in access/seqamapi.h */
 	T_TsmRoutine				/* in access/tsmapi.h */
 } NodeTag;
 

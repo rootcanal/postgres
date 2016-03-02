@@ -16,6 +16,7 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/seqamapi.h"
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"

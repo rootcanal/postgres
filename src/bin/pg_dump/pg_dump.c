@@ -45,6 +45,7 @@
 #include "access/attnum.h"
 #include "access/sysattr.h"
 #include "access/transam.h"
+#include "catalog/pg_am.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_default_acl.h"
@@ -4726,6 +4727,7 @@ getTables(Archive *fout, int *numTables)
 	int			i_relreplident;
 	int			i_owning_tab;
 	int			i_owning_col;
+	int			i_relam;
 	int			i_reltablespace;
 	int			i_reloptions;
 	int			i_checkoption;
@@ -4777,6 +4779,7 @@ getTables(Archive *fout, int *numTables)
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "array_remove(array_remove(c.reloptions,'check_option=local'),'check_option=cascaded') AS reloptions, "
 						  "CASE WHEN 'check_option=local' = ANY (c.reloptions) THEN 'LOCAL'::text "
@@ -4819,6 +4822,7 @@ getTables(Archive *fout, int *numTables)
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "array_remove(array_remove(c.reloptions,'check_option=local'),'check_option=cascaded') AS reloptions, "
 						  "CASE WHEN 'check_option=local' = ANY (c.reloptions) THEN 'LOCAL'::text "
@@ -4861,6 +4865,7 @@ getTables(Archive *fout, int *numTables)
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "array_remove(array_remove(c.reloptions,'check_option=local'),'check_option=cascaded') AS reloptions, "
 						  "CASE WHEN 'check_option=local' = ANY (c.reloptions) THEN 'LOCAL'::text "
@@ -4903,6 +4908,7 @@ getTables(Archive *fout, int *numTables)
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "c.reloptions AS reloptions, "
 						  "tc.reloptions AS toast_reloptions "
@@ -4943,6 +4949,7 @@ getTables(Archive *fout, int *numTables)
 						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "c.reloptions AS reloptions, "
 						  "tc.reloptions AS toast_reloptions "
@@ -4982,6 +4989,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "c.reloptions AS reloptions, "
 						  "tc.reloptions AS toast_reloptions "
@@ -5021,6 +5029,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "c.reloptions AS reloptions, "
 						  "NULL AS toast_reloptions "
@@ -5060,6 +5069,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
 						  "NULL AS reloptions, "
 						  "NULL AS toast_reloptions "
@@ -5098,6 +5108,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
+						  "c.relam, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
 						  "NULL AS toast_reloptions "
@@ -5132,6 +5143,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
+						  "c.relam, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
 						  "NULL AS toast_reloptions "
@@ -5161,6 +5173,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
+						  "c.relam, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
 						  "NULL AS toast_reloptions "
@@ -5200,6 +5213,7 @@ getTables(Archive *fout, int *numTables)
 						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
+						  "c.relam, "
 						  "NULL AS reltablespace, "
 						  "NULL AS reloptions, "
 						  "NULL AS toast_reloptions "
@@ -5253,6 +5267,7 @@ getTables(Archive *fout, int *numTables)
 	i_relpages = PQfnumber(res, "relpages");
 	i_owning_tab = PQfnumber(res, "owning_tab");
 	i_owning_col = PQfnumber(res, "owning_col");
+	i_relam = PQfnumber(res, "relam");
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
 	i_checkoption = PQfnumber(res, "checkoption");
@@ -5318,6 +5333,10 @@ getTables(Archive *fout, int *numTables)
 			tblinfo[i].owning_tab = atooid(PQgetvalue(res, i, i_owning_tab));
 			tblinfo[i].owning_col = atoi(PQgetvalue(res, i, i_owning_col));
 		}
+		if (PQgetisnull(res, i, i_relam))
+			tblinfo[i].relam = InvalidOid;
+		else
+			tblinfo[i].relam = atoi(PQgetvalue(res, i, i_relam));
 		tblinfo[i].reltablespace = pg_strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = pg_strdup(PQgetvalue(res, i, i_reloptions));
 		if (i_checkoption == -1 || PQgetisnull(res, i, i_checkoption))
@@ -15244,7 +15263,8 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 			   *incby,
 			   *maxv = NULL,
 			   *minv = NULL,
-			   *cache;
+			   *cache,
+			   *amname = NULL;
 	char		bufm[100],
 				bufx[100];
 	bool		cycled;
@@ -15324,6 +15344,37 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	cycled = (strcmp(PQgetvalue(res, 0, 6), "t") == 0);
 
 	/*
+	 * 9.6 adds sequence access methods but we only care if valid
+	 * sequence am that is not the default one is specified.
+	 */
+	if (fout->remoteVersion >= 90600 &&
+		tbinfo->relam != InvalidOid &&
+		tbinfo->relam != LOCAL_SEQAM_OID)
+	{
+		PGresult   *res2;
+
+		printfPQExpBuffer(query, "SELECT a.amname\n"
+								 "FROM pg_catalog.pg_am a, pg_catalog.pg_class c\n"
+								 "WHERE c.relam = a.oid AND c.oid = %u",
+						  tbinfo->dobj.catId.oid);
+
+		res2 = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+		if (PQntuples(res2) != 1)
+		{
+			write_msg(NULL, ngettext("query to get access method of sequence \"%s\" returned %d row (expected 1)\n",
+									 "query to get access method of sequence \"%s\" returned %d rows (expected 1)\n",
+									 PQntuples(res2)),
+					  tbinfo->dobj.name, PQntuples(res2));
+			exit_nicely(1);
+		}
+
+		amname = pg_strdup(PQgetvalue(res2, 0, 0));
+
+		PQclear(res2);
+	}
+
+	/*
 	 * DROP must be fully qualified in case same name appears in pg_catalog
 	 */
 	appendPQExpBuffer(delqry, "DROP SEQUENCE %s.",
@@ -15363,6 +15414,13 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	appendPQExpBuffer(query,
 					  "    CACHE %s%s",
 					  cache, (cycled ? "\n    CYCLE" : ""));
+
+	/*
+	 * Only produce using when it makes sense,
+	 * this helps with backwards compatibility.
+	 */
+	if (amname)
+		appendPQExpBuffer(query, "\n    USING %s", fmtId(amname));
 
 	appendPQExpBufferStr(query, ";\n");
 
@@ -15430,6 +15488,9 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 				 tbinfo->dobj.namespace->dobj.name, tbinfo->rolname,
 				 tbinfo->dobj.catId, 0, tbinfo->dobj.dumpId);
 
+	if (amname)
+		free(amname);
+
 	PQclear(res);
 
 	destroyPQExpBuffer(query);
@@ -15446,16 +15507,29 @@ dumpSequenceData(Archive *fout, TableDataInfo *tdinfo)
 {
 	TableInfo  *tbinfo = tdinfo->tdtable;
 	PGresult   *res;
-	char	   *last;
-	bool		called;
 	PQExpBuffer query = createPQExpBuffer();
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
 
-	appendPQExpBuffer(query,
-					  "SELECT last_value, is_called FROM %s",
-					  fmtId(tbinfo->dobj.name));
+	/*
+	 * On 9.6 there is special interface for dumping sequences but we only
+	 * use it for one with nondefault access method because we can produce
+	 * more backward compatible dump that way.
+	 */
+	if (fout->remoteVersion >= 90600 &&
+		tbinfo->relam != InvalidOid &&
+		tbinfo->relam != LOCAL_SEQAM_OID)
+	{
+		appendPQExpBuffer(query,
+						  "SELECT quote_literal(pg_catalog.pg_sequence_get_state(");
+		appendStringLiteralAH(query, tbinfo->dobj.name, fout);
+		appendPQExpBuffer(query, "))");
+	}
+	else
+		appendPQExpBuffer(query,
+						  "SELECT last_value, is_called FROM %s",
+						  fmtId(tbinfo->dobj.name));
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -15468,14 +15542,29 @@ dumpSequenceData(Archive *fout, TableDataInfo *tdinfo)
 		exit_nicely(1);
 	}
 
-	last = PQgetvalue(res, 0, 0);
-	called = (strcmp(PQgetvalue(res, 0, 1), "t") == 0);
-
 	resetPQExpBuffer(query);
-	appendPQExpBufferStr(query, "SELECT pg_catalog.setval(");
-	appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
-	appendPQExpBuffer(query, ", %s, %s);\n",
-					  last, (called ? "true" : "false"));
+
+	if (fout->remoteVersion >= 90600 &&
+		tbinfo->relam != InvalidOid &&
+		tbinfo->relam != LOCAL_SEQAM_OID)
+	{
+		char   *state = PQgetvalue(res, 0, 0);
+
+		appendPQExpBufferStr(query, "SELECT pg_catalog.pg_sequence_set_state(");
+		appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
+		/* The state got quote in the SELECT. */
+		appendPQExpBuffer(query, ", %s);\n", state);
+	}
+	else
+	{
+		char   *last = PQgetvalue(res, 0, 0);
+		bool	called = (strcmp(PQgetvalue(res, 0, 1), "t") == 0);
+
+		appendPQExpBufferStr(query, "SELECT pg_catalog.setval(");
+		appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
+		appendPQExpBuffer(query, ", %s, %s);\n",
+						  last, (called ? "true" : "false"));
+	}
 
 	ArchiveEntry(fout, nilCatalogId, createDumpId(),
 				 tbinfo->dobj.name,

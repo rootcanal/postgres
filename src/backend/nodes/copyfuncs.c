@@ -3561,7 +3561,9 @@ _copyCreateSeqStmt(const CreateSeqStmt *from)
 
 	COPY_NODE_FIELD(sequence);
 	COPY_NODE_FIELD(options);
+	COPY_NODE_FIELD(amoptions);
 	COPY_SCALAR_FIELD(ownerId);
+	COPY_STRING_FIELD(accessMethod);
 	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
@@ -3574,7 +3576,9 @@ _copyAlterSeqStmt(const AlterSeqStmt *from)
 
 	COPY_NODE_FIELD(sequence);
 	COPY_NODE_FIELD(options);
+	COPY_NODE_FIELD(amoptions);
 	COPY_SCALAR_FIELD(missing_ok);
+	COPY_STRING_FIELD(accessMethod);
 
 	return newnode;
 }
