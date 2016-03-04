@@ -1,0 +1,22 @@
+<!-- doc/src/sgml/gapless_seq.sgml -->
+<sect1 id="gapless_seq" xreflabel="gapless_seq">
+ <title>gapless sequence</title>
+
+ <indexterm zone="gapless_seq">
+  <primary>gapless_seq</primary>
+ </indexterm>
+
+ <para>
+  <filename>gapless_seq</> provides a sequence implementation that never
+  has gaps in the sequence of values it produces, even after rollback or
+  a crash.
+ </para>
+
+ <para>
+  The consequence of this capability is that every nextval() request
+  writes a WAL record recording the latest state of the sequence.
+  This could be very costly and is not recommended for general
+  usage except in specific applications that require this feature.
+ </para>
+
+</sect1>

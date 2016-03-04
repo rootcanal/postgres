@@ -19,6 +19,7 @@ SUBDIRS = \
 		earthdistance	\
 		file_fdw	\
 		fuzzystrmatch	\
+		gapless_seq	\
 		hstore		\
 		intagg		\
 		intarray	\

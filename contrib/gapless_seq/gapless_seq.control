@@ -1,0 +1,6 @@
+# Gapless sequence extension
+comment = 'Gapless Sequence AM'
+default_version = '1.0'
+module_pathname = '$libdir/gapless_seq'
+relocatable = false
+schema = gapless_seq

@@ -1,0 +1,145 @@
+CREATE EXTENSION gapless_seq;
+CREATE SEQUENCE test_gapless USING gapless;
+SELECT nextval('test_gapless'::regclass);
+ nextval 
+---------
+       1
+(1 row)
+
+BEGIN;
+	SELECT nextval('test_gapless'::regclass);
+ nextval 
+---------
+       2
+(1 row)
+
+	SELECT nextval('test_gapless'::regclass);
+ nextval 
+---------
+       3
+(1 row)
+
+	SELECT nextval('test_gapless'::regclass);
+ nextval 
+---------
+       4
+(1 row)
+
+ROLLBACK;
+SELECT nextval('test_gapless'::regclass);
+ nextval 
+---------
+       2
+(1 row)
+
+CREATE SEQUENCE test_alter_seq USING local;
+SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       1
+(1 row)
+
+ALTER SEQUENCE test_alter_seq USING gapless;
+SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       2
+(1 row)
+
+BEGIN;
+	SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       3
+(1 row)
+
+ROLLBACK;
+SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       3
+(1 row)
+
+BEGIN;
+	SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       4
+(1 row)
+
+	SAVEPOINT mysp;
+	SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       5
+(1 row)
+
+	ROLLBACK TO SAVEPOINT mysp;
+	SAVEPOINT mysp2;
+	SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       5
+(1 row)
+
+	RELEASE SAVEPOINT mysp2;
+	SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+       6
+(1 row)
+
+COMMIT;
+ALTER SEQUENCE test_alter_seq RESTART 100 USING local;
+SELECT nextval('test_alter_seq'::regclass);
+ nextval 
+---------
+     100
+(1 row)
+
+-- check dump/restore
+SELECT pg_sequence_get_state('test_gapless');
+ pg_sequence_get_state 
+-----------------------
+ (2,t)
+(1 row)
+
+SELECT pg_sequence_set_state('test_gapless', pg_sequence_get_state('test_gapless'));
+ pg_sequence_set_state 
+-----------------------
+ 
+(1 row)
+
+SELECT pg_sequence_get_state('test_gapless');
+ pg_sequence_get_state 
+-----------------------
+ (2,t)
+(1 row)
+
+-- check that event trigger works correctly
+SELECT last_value FROM gapless_seq.seqam_gapless_values ORDER BY seqid;
+ last_value 
+------------
+          2
+          6
+(2 rows)
+
+DROP SEQUENCE test_gapless;
+SELECT last_value FROM gapless_seq.seqam_gapless_values ORDER BY seqid;
+ last_value 
+------------
+(0 rows)
+
+CREATE SEQUENCE test_gapless USING gapless;
+-- should fail due to deps
+DROP ACCESS METHOD gapless;
+ERROR:  cannot drop access method gapless because extension gapless_seq requires it
+HINT:  You can drop extension gapless_seq instead.
+-- likewise
+DROP EXTENSION gapless_seq;
+ERROR:  cannot drop extension gapless_seq because other objects depend on it
+DETAIL:  sequence test_gapless depends on access method gapless
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+-- success
+DROP EXTENSION gapless_seq CASCADE;
+NOTICE:  drop cascades to sequence test_gapless
