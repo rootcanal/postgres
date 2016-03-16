@@ -232,7 +232,8 @@ logical_read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
 	int			count;
 
 	loc = targetPagePtr + reqLen;
-	/* Make sure enough xlog is available...  */
+
+	/* Make sure enough xlog is available... */
 	while (1)
 	{
 		/*
