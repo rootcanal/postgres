@@ -3,6 +3,9 @@
 MODULES = test_decoding
 OBJS = test_decoding.o
 
+EXTENSION = failover_slots
+DATA = failover_slots--1.0.sql
+
 # Note: because we don't tell the Makefile there are any regression tests,
 # we have to clean those result files explicitly
 EXTRA_CLEAN = $(pg_regress_clean_files) ./regression_output ./isolation_output
@@ -38,7 +41,7 @@ submake-test_decoding:
 	$(MAKE) -C $(top_builddir)/contrib/test_decoding
 
 REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
-	decoding_into_rel binary prepared
+	decoding_into_rel binary prepared failover_slots
 
 regresscheck: all | submake-regress submake-test_decoding
 	$(MKDIR_P) regression_output

@@ -29,7 +29,25 @@ LANGUAGE internal
 STABLE ROWS 10
 AS 'pg_get_replication_slots';
 
-CREATE VIEW pg_catalog.pg_replication_slots_failover AS
+--
+-- This should be a view, but we can't create views in
+-- pg_catalog without running afoul of allow_system_table_mods.
+--
+-- Functions are permitted.
+--
+CREATE FUNCTION pg_catalog.pg_replication_slots_failover()
+RETURNS TABLE (
+    slot_name name,
+    plugin name,
+    slot_type text,
+    datoid oid,
+    "database" name,
+    active boolean,
+    xmin xid,
+    catalog_xmin xid,
+    restart_lsn pg_lsn,
+    failover boolean
+) AS $$
     SELECT
             L.slot_name,
             L.plugin,
@@ -37,9 +55,10 @@ CREATE VIEW pg_catalog.pg_replication_slots_failover AS
             L.datoid,
             D.datname AS database,
             L.active,
-            L.failover,
             L.xmin,
             L.catalog_xmin,
-            L.restart_lsn
+            L.restart_lsn,
+            L.failover
     FROM pg_get_replication_slots_failover() AS L
             LEFT JOIN pg_database D ON (L.datoid = D.oid);
+$$ LANGUAGE sql;

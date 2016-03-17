@@ -18,7 +18,6 @@ SUBDIRS = \
 		dict_xsyn	\
 		dummy_seclabel	\
 		earthdistance	\
-		failover_slots	\
 		file_fdw	\
 		fuzzystrmatch	\
 		hstore		\
