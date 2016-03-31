@@ -256,7 +256,7 @@ CreateInitDecodingContext(char *plugin,
 	/*
 	 * The replication slot mechanism is used to prevent removal of required
 	 * WAL. As there is no interlock between this and checkpoints required WAL
-	 * could be removed before ReplicationSlotsComputeRequiredLSN() has been
+	 * could be removed before ReplicationSlotsUpdateRequiredLSN() has been
 	 * called to prevent that. In the very unlikely case that this happens
 	 * we'll just retry.
 	 */
@@ -285,12 +285,12 @@ CreateInitDecodingContext(char *plugin,
 			slot->data.restart_lsn = GetRedoRecPtr();
 
 		/* prevent WAL removal as fast as possible */
-		ReplicationSlotsComputeRequiredLSN(false);
+		ReplicationSlotsUpdateRequiredLSN();
 
 		/*
 		 * If all required WAL is still there, great, otherwise retry. The
 		 * slot should prevent further removal of WAL, unless there's a
-		 * concurrent ReplicationSlotsComputeRequiredLSN() after we've written
+		 * concurrent ReplicationSlotsUpdateRequiredLSN() after we've written
 		 * the new restart_lsn above, so normally we should never need to loop
 		 * more than twice.
 		 */
