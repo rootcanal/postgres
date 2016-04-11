@@ -23,11 +23,10 @@
 #include "getopt_long.h"
 #include "rmgrdesc.h"
 
-extern void
-init_multixact_hack();
-
-extern void
-multixact_redo(XLogRecPtr lsn, XLogRecord *record);
+extern void init_multixact_hack(void);
+extern void checkpoint_multixact_hack(XLogRecPtr);
+extern void shutdown_multixact_hack(XLogRecPtr);
+extern void multixact_redo(XLogRecPtr lsn, XLogRecord *record);
 
 static const char *progname;
 
@@ -415,6 +414,7 @@ main(int argc, char **argv)
 	XLogRecord *record;
 	XLogRecPtr	first_record;
 	char	   *errormsg;
+	XLogSegNo last_seg;
 
 	static struct option long_options[] = {
 		{"bkp-details", no_argument, NULL, 'b'},
@@ -690,6 +690,8 @@ main(int argc, char **argv)
 			   (uint32) (first_record >> 32), (uint32) first_record,
 			   (uint32) (first_record - private.startptr));
 
+	last_seg = 0;
+
 	while ((record = XLogReadRecord(xlogreader_state, first_record, &errormsg)))
 	{
 		/* continue after the last record */
@@ -706,9 +708,16 @@ main(int argc, char **argv)
 		if (config.stop_after_records > 0 &&
 			config.already_displayed_records >= config.stop_after_records)
 			break;
+
+		if (xlogreader_state->readSegNo != last_seg &&
+				xlogreader_state->readSegNo % 100 == 0)
+		{
+			checkpoint_multixact_hack(xlogreader_state->ReadRecPtr);
+			last_seg = xlogreader_state->readSegNo;
+		}
 	}
 
-	shutdown_multixact_hack();
+	shutdown_multixact_hack(xlogreader_state->ReadRecPtr);
 
 	if (errormsg)
 		fatal_error("error in WAL record at %X/%X: %s\n",

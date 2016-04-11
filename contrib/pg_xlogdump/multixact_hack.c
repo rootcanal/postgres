@@ -66,7 +66,8 @@
 	((xid) == FirstMultiXactId ? MaxMultiXactId : (xid) - 1)
 
 void init_multixact_hack(void);
-void shutdown_multixact_hack(void);
+void shutdown_multixact_hack(XLogRecPtr cur_lsn);
+void checkpoint_multixact_hack(XLogRecPtr cur_lsn);
 
 /*
  * Links to shared-memory data structures for MultiXact control
@@ -76,6 +77,13 @@ static SlruCtlData MultiXactMemberCtlData;
 
 #define MultiXactOffsetCtl	(&MultiXactOffsetCtlData)
 #define MultiXactMemberCtl	(&MultiXactMemberCtlData)
+
+static int next_minMulti;
+static int next_minMultiOffset;
+
+static int minmulti_file;
+static int minoffset_file;
+static int progress_file;
 
 /* TODO: initialize from pg_control? */
 TransactionId ShmemVariableCache_nextXid = FirstNormalTransactionId;
@@ -98,23 +106,6 @@ typedef struct MultiXactStateData
 
 /* Pointers to the state data in shared memory */
 static MultiXactStateData *MultiXactState;
-
-/*
- * Write stuff to files
- */
-static void
-updateMinMulti(MultiXactId minMulti)
-{
-	fprintf(stderr, "not implemented");
-	exit(1);
-}
-
-static void
-updateMinMultiOffset(MultiXactOffset off)
-{
-	fprintf(stderr, "not implemented");
-	exit(1);
-}
 
 bool
 MultiXactIdPrecedes(MultiXactId multi1, MultiXactId multi2)
@@ -150,11 +141,11 @@ MultiXactAdvanceNextMXact(MultiXactId minMulti,
 {
 	if (MultiXactIdPrecedes(MultiXactState->nextMXact, minMulti))
 	{
-		updateMinMulti(minMulti);
+		next_minMulti = minMulti;
 	}
 	if (MultiXactOffsetPrecedes(MultiXactState->nextOffset, minMultiOffset))
 	{
-		updateMinMultiOffset(minMultiOffset);
+		next_minMultiOffset = minMultiOffset;
 	}
 }
 
@@ -211,6 +202,11 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 	MultiXactOffset *offptr;
 	int			i;
 
+#ifdef VERBOSE_LOG
+	fprintf(stderr, "Starting replay of multixact %u off %u members %d\n",
+			multi, offset, nmembers);
+#endif
+
 	pageno = MultiXactIdToOffsetPage(multi);
 	entryno = MultiXactIdToOffsetEntry(multi);
 
@@ -242,6 +238,10 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 
 		Assert(members[i].status <= MultiXactStatusUpdate);
 
+#ifdef VERBOSE_LOG
+		fprintf(stderr, "replaying member %d\n", i);
+#endif
+
 		pageno = MXOffsetToMemberPage(offset);
 		memberoff = MXOffsetToMemberOffset(offset);
 		flagsoff = MXOffsetToFlagsOffset(offset);
@@ -266,8 +266,17 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 		flagsval |= (members[i].status << bshift);
 		*flagsptr = flagsval;
 
+#ifdef VERBOSE_LOG
+		fprintf(stderr, "replayed member on page %u, ptr %u, flags %x\n", pageno, *memberptr, *flagsptr);
+#endif
+
 		MultiXactMemberCtl->shared->page_dirty[slotno] = true;
 	}
+
+#ifdef VERBOSE_LOG
+	fprintf(stderr, "Finshed replay of multixact %u off %u members %d\n",
+			multi, offset, nmembers);
+#endif
 }
 
 bool
@@ -335,6 +344,8 @@ multixact_redo(XLogRecPtr lsn, XLogRecord *record)
 		TransactionId max_xid;
 		int			i;
 
+		fprintf(stderr, "Replaying multixact creation\n");
+
 		/* Store the data back into the SLRU files */
 		RecordNewMultiXact(xlrec->mid, xlrec->moff, xlrec->nmembers,
 						   xlrec->members);
@@ -374,11 +385,52 @@ multixact_redo(XLogRecPtr lsn, XLogRecord *record)
 	}
 }
 
+/*
+ * Decide which of two MultiXactOffset page numbers is "older" for truncation
+ * purposes.
+ *
+ * We need to use comparison of MultiXactId here in order to do the right
+ * thing with wraparound.  However, if we are asked about page number zero, we
+ * don't want to hand InvalidMultiXactId to MultiXactIdPrecedes: it'll get
+ * weird.  So, offset both multis by FirstMultiXactId to avoid that.
+ * (Actually, the current implementation doesn't do anything weird with
+ * InvalidMultiXactId, but there's no harm in leaving this code like this.)
+ */
+static bool
+MultiXactOffsetPagePrecedes(int page1, int page2)
+{
+	MultiXactId multi1;
+	MultiXactId multi2;
+
+	multi1 = ((MultiXactId) page1) * MULTIXACT_OFFSETS_PER_PAGE;
+	multi1 += FirstMultiXactId;
+	multi2 = ((MultiXactId) page2) * MULTIXACT_OFFSETS_PER_PAGE;
+	multi2 += FirstMultiXactId;
+
+	return MultiXactIdPrecedes(multi1, multi2);
+}
+
+/*
+ * Decide which of two MultiXactMember page numbers is "older" for truncation
+ * purposes.  There is no "invalid offset number" so use the numbers verbatim.
+ */
+static bool
+MultiXactMemberPagePrecedes(int page1, int page2)
+{
+	MultiXactOffset offset1;
+	MultiXactOffset offset2;
+
+	offset1 = ((MultiXactOffset) page1) * MULTIXACT_MEMBERS_PER_PAGE;
+	offset2 = ((MultiXactOffset) page2) * MULTIXACT_MEMBERS_PER_PAGE;
+
+	return MultiXactOffsetPrecedes(offset1, offset2);
+}
+
 void
 MultiXactShmemInit(void)
 {
-	MultiXactOffsetCtl->PagePrecedes = NULL; /* XXX was: MultiXactOffsetPagePrecedes; */
-	MultiXactMemberCtl->PagePrecedes = NULL; /* XXX was: MultiXactMemberPagePrecedes; */
+	MultiXactOffsetCtl->PagePrecedes = MultiXactOffsetPagePrecedes;
+	MultiXactMemberCtl->PagePrecedes = MultiXactMemberPagePrecedes;
 
 	SimpleLruInit(MultiXactOffsetCtl,
 				  "MultiXactOffset Ctl", NUM_MXACTOFFSET_BUFFERS, 0,
@@ -386,6 +438,8 @@ MultiXactShmemInit(void)
 	SimpleLruInit(MultiXactMemberCtl,
 				  "MultiXactMember Ctl", NUM_MXACTMEMBER_BUFFERS, 0,
 				  MultiXactMemberControlLock, "pg_multixact/members");
+
+	MultiXactState = (MultiXactStateData*)malloc(sizeof(MultiXactStateData));
 }
 
 void
@@ -395,12 +449,79 @@ init_multixact_hack()
 
 	MultiXactShmemInit();
 
-	fprintf(stderr, "Initialized multixact hack\n");
+	MultiXactState->nextMXact = 1;
+	MultiXactState->nextOffset = 1;
+
+	if ((minmulti_file = open("min_multi", O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR)) == -1)
+	{
+		fprintf(stderr, "couldn't open min_multi output file: %s", strerror(errno));
+		exit(1);
+	}
+
+	if ((minoffset_file = open("min_offset", O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR)) == -1)
+	{
+		fprintf(stderr, "couldn't open min_offset output file: %s", strerror(errno));
+		exit(1);
+	}
+
+	if ((progress_file = open("replay_progress", O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR)) == -1)
+	{
+		fprintf(stderr, "couldn't open progress output file: %s", strerror(errno));
+		exit(1);
+	}
+
+	fprintf(stderr, "Initialized multixact replay\n");
 }
 
 void
-shutdown_multixact_hack()
+checkpoint_multixact_hack(XLogRecPtr lsn)
 {
+	char format_buf[80];
+
+	fprintf(stderr, "checkpointing progress at %X/%X\n");
 	SimpleLruFlush(MultiXactOffsetCtl, false);
 	SimpleLruFlush(MultiXactMemberCtl, false);
+
+	memset(format_buf, 0, 80);
+	snprintf(format_buf, 80, "%u\n", next_minMulti);
+	if (lseek(minmulti_file, 0, SEEK_SET) == -1) {
+		fprintf(stderr, "seeking in minmulti failed: %s\n", strerror(errno));
+		exit(2);
+	}
+	if (write(minmulti_file, format_buf, 80) == -1) {
+		fprintf(stderr,"updating minmulti failed: %s\n", strerror(errno));
+		exit(2);
+	}
+
+	memset(format_buf, 0, 80);
+	snprintf(format_buf, 80, "%u\n", next_minMultiOffset);
+	if (lseek(minoffset_file, 0, SEEK_SET) == -1) {
+		fprintf(stderr, "seeking in minmulti failed: %s\n", strerror(errno));
+		exit(2);
+	}
+	if (write(minoffset_file, format_buf, 80) == -1) {
+		fprintf(stderr,"updating minoffset failed: %s\n", strerror(errno));
+		exit(2);
+	}
+
+	memset(format_buf, 0, 80);
+	snprintf(format_buf, 80, "%X/%X\n", (uint32)(lsn>>32), (uint32)lsn);
+	if (lseek(progress_file, 0, SEEK_SET) == -1) {
+		fprintf(stderr, "seeking in progress file failed: %s\n", strerror(errno));
+		exit(2);
+	}
+	if (write(progress_file, format_buf, 80) == -1) {
+		fprintf(stderr,"updating progress file failed: %s\n", strerror(errno));
+		exit(2);
+	}
+}
+
+void
+shutdown_multixact_hack(XLogRecPtr cur_lsn)
+{
+	checkpoint_multixact_hack(cur_lsn);
+
+	close(minmulti_file);
+	close(minoffset_file);
+	close(progress_file);
 }
