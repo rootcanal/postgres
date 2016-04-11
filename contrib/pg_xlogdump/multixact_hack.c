@@ -149,28 +149,12 @@ MultiXactAdvanceNextMXact(MultiXactId minMulti,
 	}
 }
 
-static void
-WriteMZeroPageXlogRec(int pageno, uint8 info)
-{
-	XLogRecData rdata;
-
-	rdata.data = (char *) (&pageno);
-	rdata.len = sizeof(int);
-	rdata.buffer = InvalidBuffer;
-	rdata.next = NULL;
-	(void) XLogInsert(RM_MULTIXACT_ID, info, &rdata);
-}
-
-
 static int
 ZeroMultiXactOffsetPage(int pageno, bool writeXlog)
 {
 	int			slotno;
 
 	slotno = SimpleLruZeroPage(MultiXactOffsetCtl, pageno);
-
-	if (writeXlog)
-		WriteMZeroPageXlogRec(pageno, XLOG_MULTIXACT_ZERO_OFF_PAGE);
 
 	return slotno;
 }
@@ -184,9 +168,6 @@ ZeroMultiXactMemberPage(int pageno, bool writeXlog)
 	int			slotno;
 
 	slotno = SimpleLruZeroPage(MultiXactMemberCtl, pageno);
-
-	if (writeXlog)
-		WriteMZeroPageXlogRec(pageno, XLOG_MULTIXACT_ZERO_MEM_PAGE);
 
 	return slotno;
 }
@@ -478,7 +459,8 @@ checkpoint_multixact_hack(XLogRecPtr lsn)
 {
 	char format_buf[80];
 
-	fprintf(stderr, "checkpointing progress at %X/%X\n");
+	fprintf(stderr, "checkpointing progress at %X/%X\n",
+			(uint32)(lsn>>32), (uint32)lsn);
 	SimpleLruFlush(MultiXactOffsetCtl, false);
 	SimpleLruFlush(MultiXactMemberCtl, false);
 
