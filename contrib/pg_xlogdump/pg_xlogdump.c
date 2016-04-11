@@ -23,6 +23,11 @@
 #include "getopt_long.h"
 #include "rmgrdesc.h"
 
+extern void
+init_multixact_hack();
+
+extern void
+multixact_redo(XLogRecPtr lsn, XLogRecord *record);
 
 static const char *progname;
 
@@ -565,6 +570,8 @@ main(int argc, char **argv)
 		}
 	}
 
+	init_multixact_hack();
+
 	/* parse files as start/end boundaries, extract path if not specified */
 	if (optind < argc)
 	{
@@ -689,11 +696,19 @@ main(int argc, char **argv)
 		first_record = InvalidXLogRecPtr;
 		XLogDumpDisplayRecord(&config, xlogreader_state->ReadRecPtr, record);
 
+		if (record->xl_rmid == RM_MULTIXACT_ID)
+		{
+			/* Dispatch the record to the modified multixact redo routines */
+			multixact_redo(xlogreader_state->ReadRecPtr, record);
+		}
+
 		/* check whether we printed enough */
 		if (config.stop_after_records > 0 &&
 			config.already_displayed_records >= config.stop_after_records)
 			break;
 	}
+
+	shutdown_multixact_hack();
 
 	if (errormsg)
 		fatal_error("error in WAL record at %X/%X: %s\n",
