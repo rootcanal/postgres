@@ -632,10 +632,9 @@ XLogReadDetermineTimeline(XLogReaderState *state)
 			   state->currTLIValidUntil == InvalidXLogRecPtr)
 		{
 			XLogRecPtr	tliSwitch;
-			TimeLineID	nextTLI;
 
 			tliSwitch = tliSwitchPoint(state->currTLI, state->timelineHistory,
-					&nextTLI);
+					&state->nextTLI);
 
 			state->currTLIValidUntil = ((tliSwitch / XLogSegSize) * XLogSegSize);
 
@@ -649,7 +648,7 @@ XLogReadDetermineTimeline(XLogReaderState *state)
 				 * If that's the current TLI we'll stop
 				 * searching.
 				 */
-				state->currTLI = nextTLI;
+				state->currTLI = state->nextTLI;
 				state->currTLIValidUntil = InvalidXLogRecPtr;
 			}
 		}

@@ -105,6 +105,9 @@ struct XLogReaderState
 	XLogRecPtr	currRecPtr;
 	/* timeline to read it from, 0 if a lookup is required */
 	TimeLineID  currTLI;
+	/* timeline that follows currTLI */
+	TimeLineID  nextTLI;
+
 	/*
 	 * Endpoint of timeline in currTLI if it's historical or
 	 * InvalidXLogRecPtr if currTLI is the current timeline.

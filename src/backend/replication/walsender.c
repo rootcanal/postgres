@@ -754,6 +754,12 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
 	XLogRecPtr	flushptr;
 	int			count;
 
+	XLogReadDetermineTimeline(state);
+	sendTimeLineIsHistoric = state->currTLI == ThisTimeLineID;
+	sendTimeLine = state->currTLI;
+	sendTimeLineValidUpto = state->currTLIValidUntil;
+	sendTimeLineNextTLI = state->nextTLI;
+
 	/* make sure we have enough WAL available */
 	flushptr = WalSndWaitForWal(targetPagePtr + reqLen);
 
@@ -972,10 +978,6 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 	pq_sendint(&buf, 0, 2);
 	pq_endmessage(&buf);
 	pq_flush();
-
-	/* setup state for XLogReadPage */
-	sendTimeLineIsHistoric = false;
-	sendTimeLine = ThisTimeLineID;
 
 	/*
 	 * Initialize position to the last ack'ed one, then the xlog records begin
