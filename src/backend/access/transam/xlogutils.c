@@ -773,7 +773,7 @@ XLogRead(char *buf, TimeLineID tli, XLogRecPtr startptr, Size count)
  * might be reading from historical timeline data on a segment that's been
  * copied to a new timeline.
  */
-static void
+void
 XLogReadDetermineTimeline(XLogReaderState *state)
 {
 	/* Read the history on first time through */
@@ -856,12 +856,11 @@ XLogReadDetermineTimeline(XLogReaderState *state)
 			   state->currTLIValidUntil == InvalidXLogRecPtr)
 		{
 			XLogRecPtr	tliSwitch;
-			TimeLineID	nextTLI;
 
 			CHECK_FOR_INTERRUPTS();
 
 			tliSwitch = tliSwitchPoint(state->currTLI, state->timelineHistory,
-									   &nextTLI);
+									   &state->nextTLI);
 
 			/* round ValidUntil down to start of seg containing the switch */
 			state->currTLIValidUntil =
@@ -875,7 +874,7 @@ XLogReadDetermineTimeline(XLogReaderState *state)
 				 *
 				 * If that's the current TLI we'll stop searching.
 				 */
-				state->currTLI = nextTLI;
+				state->currTLI = state->nextTLI;
 				state->currTLIValidUntil = InvalidXLogRecPtr;
 			}
 		}
