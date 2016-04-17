@@ -1748,7 +1748,7 @@ replslot_redo(XLogRecPtr lsn, XLogRecord *record)
 		 */
 		case XLOG_REPLSLOT_UPDATE:
 			{
-				ReplicationSlotInWAL *xlrec = (ReplicationSlotInWAL)XLogRecGetData(record);
+				ReplicationSlotInWAL xlrec = (ReplicationSlotInWAL)XLogRecGetData(record);
 				ReplicationSlotRedoCreateOrUpdate(xlrec);
 				break;
 			}

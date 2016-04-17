@@ -17,6 +17,8 @@
 
 #include <unistd.h>
 
+#include "access/xlogutils.h"
+
 #include "fmgr.h"
 #include "funcapi.h"
 #include "miscadmin.h"
