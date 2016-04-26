@@ -3,6 +3,9 @@
 MODULES = test_decoding
 PGFILEDESC = "test_decoding - example of a logical decoding output plugin"
 
+EXTENSION = failover_slots
+DATA = failover_slots--1.0.sql
+
 # Note: because we don't tell the Makefile there are any regression tests,
 # we have to clean those result files explicitly
 EXTRA_CLEAN = $(pg_regress_clean_files) ./regression_output ./isolation_output
@@ -38,7 +41,7 @@ submake-test_decoding:
 	$(MAKE) -C $(top_builddir)/contrib/test_decoding
 
 REGRESSCHECKS=ddl xact rewrite toast permissions decoding_in_xact \
-	decoding_into_rel binary prepared replorigin time
+	decoding_into_rel binary prepared replorigin time failover_slots
 
 regresscheck: | submake-regress submake-test_decoding temp-install
 	$(MKDIR_P) regression_output

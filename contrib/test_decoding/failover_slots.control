@@ -1,0 +1,4 @@
+comment = 'failover slots 9.4 backport'
+default_version = '1.0'
+relocatable = false
+schema = pg_catalog
