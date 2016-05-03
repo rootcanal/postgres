@@ -164,21 +164,14 @@ struct XLogReaderState
 	TimeLineID  nextTLI;
 
 	/*
-	 * Safe point to read to in currTLI.  If currTLI is historical, then this
-	 * is set to the end of the last whole segment that contains that TLI;
-	 * if currTLI is ThisTimeLineID, this is InvalidXLogRecPtr.  This is *not*
-	 * the tliSwitchPoint.
+	 * Safe point to read to in currTLI if current TLI is historical
+	 * (tliSwitchPoint) or InvalidXLogRecPtr if on current timeline.
 	 */
 	XLogRecPtr	currTLIValidUntil;
 
 	/* Buffer for current ReadRecord result (expandable) */
 	char	   *readRecordBuf;
 	uint32		readRecordBufSize;
-
-#ifndef FRONTEND
-	/* cached timeline history, only available in backend */
-	List	   *timelineHistory;
-#endif
 
 	/* Buffer to hold error message */
 	char	   *errormsg_buf;
