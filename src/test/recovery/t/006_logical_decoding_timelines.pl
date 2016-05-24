@@ -32,9 +32,14 @@ $node_master->init(allows_streaming => 1, has_archiving => 1);
 $node_master->append_conf('postgresql.conf', "wal_level = 'logical'\n");
 $node_master->append_conf('postgresql.conf', "max_replication_slots = 2\n");
 $node_master->append_conf('postgresql.conf', "max_wal_senders = 2\n");
-$node_master->append_conf('postgresql.conf', "log_min_messages = 'debug2'\n");
+$node_master->append_conf('postgresql.conf', "log_min_messages = 'debug3'\n");
+$node_master->append_conf('postgresql.conf', "log_error_verbosity = verbose\n");
 $node_master->dump_info;
 $node_master->start;
+
+#---------------------------------------------------------------
+# Testing with FS-level copy
+#---------------------------------------------------------------
 
 diag "Testing logical timeline following with a filesystem-level copy";
 
@@ -102,6 +107,9 @@ like(
 $node_replica->teardown_node();
 
 
+#---------------------------------------------------------------
+# Testing with test_slot_timelines
+#---------------------------------------------------------------
 # OK, time to try the same thing again, but this time we'll be using slot
 # mirroring on the standby and a pg_basebackup of the master.
 
@@ -237,6 +245,7 @@ diag "oldest needed xlog seg is $oldest_needed_segment ";
 opendir(my $pg_xlog, $node_master->data_dir . "/pg_xlog") or die $!;
 while (my $seg = readdir $pg_xlog)
 {
+	diag "considering segment $seg against needed seg $oldest_needed_segment";
 	next unless $seg >= $oldest_needed_segment && $seg =~ /^[0-9]{24}/;
 	diag "copying xlog seg $seg";
 	copy(

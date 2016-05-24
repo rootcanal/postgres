@@ -659,7 +659,10 @@ XLogRead(char *buf, TimeLineID tli, XLogRecPtr startptr, Size count)
 	/* state maintained across calls */
 	static int	sendFile = -1;
 	static XLogSegNo sendSegNo = 0;
+	static TimeLineID sendTLI = 0;
 	static uint32 sendOff = 0;
+
+	elog(LOG, "XXX XLogRead tli = %u", tli);
 
 	p = buf;
 	recptr = startptr;
@@ -674,7 +677,7 @@ XLogRead(char *buf, TimeLineID tli, XLogRecPtr startptr, Size count)
 		startoff = recptr % XLogSegSize;
 
 		/* Do we need to switch to a different xlog segment? */
-		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo))
+		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo) || sendTLI != tli)
 		{
 			char		path[MAXPGPATH];
 
@@ -701,6 +704,7 @@ XLogRead(char *buf, TimeLineID tli, XLogRecPtr startptr, Size count)
 									path)));
 			}
 			sendOff = 0;
+			sendTLI = tli;
 		}
 
 		/* Need to seek in the file? */
@@ -804,7 +808,6 @@ XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wa
 	if (lastReadPage == wantPage &&
 		lastReadPage + state->readLen >= wantPage + Min(wantLength,XLOG_BLCKSZ-1))
 	{
-		elog(DEBUG4, "Wanted data already valid"); //XXX
 		return;
 	}
 
@@ -918,12 +921,10 @@ read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
 		 * that changes.
 		 */
 		XLogReadDetermineTimeline(state, targetPagePtr, reqLen);
+		*pageTLI = state->currTLI;
 
 		if (!RecoveryInProgress())
-		{
-			*pageTLI = ThisTimeLineID;
 			read_upto = GetFlushRecPtr();
-		}
 		else
 			read_upto = GetXLogReplayRecPtr(pageTLI);
 

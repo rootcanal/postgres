@@ -166,16 +166,6 @@ struct XLogReaderState
 	XLogRecPtr	currRecPtr;
 	/* timeline to read it from, 0 if a lookup is required */
 	TimeLineID	currTLI;
-	/*
-	 * Safe point to read to in currTLI.  If currTLI is historical, then this
-	 * is set to the end of the last whole segment that contains that TLI;
-	 * if currTLI is ThisTimeLineID, this is InvalidXLogRecPtr.  This is *not*
-	 * the tliSwitchPoint.
-	 */
-	XLogRecPtr	currTLIValidUntil;
-
-	/* timeline to read it from, 0 if a lookup is required */
-	TimeLineID	currTLI;
 	/* timeline that follows currTLI */
 	TimeLineID  nextTLI;
 

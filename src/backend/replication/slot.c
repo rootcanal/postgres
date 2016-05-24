@@ -301,7 +301,6 @@ ReplicationSlotCreate(const char *name, bool db_specific,
 	slot->data.database = db_specific ? MyDatabaseId : InvalidOid;
 	slot->data.restart_lsn = InvalidXLogRecPtr;
 	/* Slot timeline is unused and always zero */
-	slot->data.restart_tli = 0;
 	slot->data.failover = failover;
 
 	/*
@@ -922,7 +921,6 @@ ReplicationSlotReserveWal(void)
 
 	Assert(slot != NULL);
 	Assert(slot->data.restart_lsn == InvalidXLogRecPtr);
-	Assert(slot->data.restart_tli == 0);
 
 	/*
 	 * The replication slot mechanism is used to prevent removal of required

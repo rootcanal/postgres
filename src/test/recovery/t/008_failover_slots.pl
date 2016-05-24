@@ -3,7 +3,6 @@
 #
 use strict;
 use warnings;
-use bigint;
 use PostgresNode;
 use TestLib;
 use Test::More;
@@ -13,6 +12,7 @@ use File::Basename qw(basename);
 use List::Util qw();
 use Data::Dumper;
 use IPC::Run qw();
+use Math::BigInt;
 
 
 use Carp 'verbose';
@@ -24,7 +24,7 @@ sub lsn_to_bigint
 {
 	my ($lsn) = @_;
 	my ($high, $low) = split("/",$lsn);
-	return hex($high) * 2**32 + hex($low);
+	return Math::BigInt->new(hex($high)) * 2**32 + Math::BigInt->new(hex($low));
 }
 
 sub get_slot_info
@@ -570,8 +570,8 @@ wait_for_catchup($node_master, $node_replica);
 # pg_receivexlog should've died
 $proc->finish;
 is($proc->result, 1, 'pg_receivexlog exited with error code after its slot was dropped');
-like($$stdout, '', 'no stdout');
-like($$stderr, qr/by administrative command/, 'pg_receivexlog exited with admin command');
+is($$stdout, '', 'no stdout');
+like($$stderr, qr/due to administrator command/, 'pg_receivexlog exited with admin command');
 
 # The slot is now a failover slot
 $si = get_slot_info($node_replica, 'replace_me');
@@ -606,7 +606,7 @@ $node_master->safe_psql('postgres',
 );
 
 $node_master->safe_psql('postgres',
-  "CREATE TABLE big_inserts (id serial primary key, text padding);"
+  "CREATE TABLE big_inserts (id serial primary key, padding text);"
 );
 
 $node_master->safe_psql('postgres',
