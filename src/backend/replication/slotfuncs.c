@@ -40,11 +40,20 @@ Datum
 pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
+	bool		failover = false;
 	Datum		values[2];
 	bool		nulls[2];
 	TupleDesc	tupdesc;
 	HeapTuple	tuple;
 	Datum		result;
+
+	/*
+	 * This function can be called with the standard signature
+	 * in pg_proc, or with the new signature from the failover
+	 * slots extension. It must cope with either.
+	 */
+	if (PG_NARGS() == 2)
+		failover = PG_GETARG_BOOL(1);
 
 	Assert(!MyReplicationSlot);
 
@@ -56,7 +65,7 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 	CheckSlotRequirements();
 
 	/* acquire replication slot, this will check for conflicting names */
-	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT);
+	ReplicationSlotCreate(NameStr(*name), false, RS_PERSISTENT, failover);
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
 
@@ -80,6 +89,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
 	Name		plugin = PG_GETARG_NAME(1);
+	bool		failover = false;
 
 	LogicalDecodingContext *ctx = NULL;
 
@@ -88,6 +98,14 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	Datum		result;
 	Datum		values[2];
 	bool		nulls[2];
+
+	/*
+	 * This function can be called with the standard signature
+	 * in pg_proc, or with the new signature from the failover
+	 * slots extension. It must cope with either.
+	 */
+	if (PG_NARGS() == 3)
+		failover = PG_GETARG_BOOL(2);
 
 	Assert(!MyReplicationSlot);
 
@@ -104,7 +122,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	 * errors during initialization because it'll get dropped if this
 	 * transaction fails. We'll make it persistent at the end.
 	 */
-	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL);
+	ReplicationSlotCreate(NameStr(*name), true, RS_EPHEMERAL, failover);
 
 	/*
 	 * Create logical decoding context, to build the initial snapshot.
@@ -207,6 +225,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		TransactionId catalog_xmin;
 		XLogRecPtr	restart_lsn;
 		pid_t		active_pid;
+		bool		failover;
 		Oid			database;
 		NameData	slot_name;
 		NameData	plugin;
@@ -226,6 +245,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			restart_lsn = slot->data.restart_lsn;
 			namecpy(&slot_name, &slot->data.name);
 			namecpy(&plugin, &slot->data.plugin);
+			failover = slot->data.failover;
 
 			active_pid = slot->active_pid;
 		}
@@ -272,6 +292,19 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			values[i++] = LSNGetDatum(restart_lsn);
 		else
 			nulls[i++] = true;
+
+		/*
+		 * This functoin can be called with the standard signature in
+		 * pg_proc, in which case it's not expecting an extra
+		 * 'failover' column, or with the new signature from our
+		 * extension where there's room.  We can tell between the two
+		 * cases using the expected tupledesc but we don't actually
+		 * need to - it's harmless to allocate an extra space in the
+		 * resultset array and populate it. It'll just get ignored if
+		 * it isn't expected, but this means that the failover field
+		 * must be last in the result.
+		 */
+		values[i++] = BoolGetDatum(failover);
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 	}

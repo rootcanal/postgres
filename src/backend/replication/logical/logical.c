@@ -85,16 +85,19 @@ CheckLogicalDecodingRequirements(void)
 				 errmsg("logical decoding requires a database connection")));
 
 	/* ----
-	 * TODO: We got to change that someday soon...
+	 * TODO: Allow logical decoding from a standby
 	 *
-	 * There's basically three things missing to allow this:
+	 * There are some things missing to allow this:
 	 * 1) We need to be able to correctly and quickly identify the timeline a
-	 *	  LSN belongs to
-	 * 2) We need to force hot_standby_feedback to be enabled at all times so
-	 *	  the primary cannot remove rows we need.
-	 * 3) support dropping replication slots referring to a database, in
-	 *	  dbase_redo. There can't be any active ones due to HS recovery
-	 *	  conflicts, so that should be relatively easy.
+	 *    LSN belongs to
+	 * 2) To prevent needed rows from being removed we would need
+	 *    to enhance hot_standby_feedback so it sends both xmin and
+	 *    catalog_xmin to the master.  A standby slot can't write WAL, so we
+	 *    wouldn't be able to use it directly for failover, without some very
+	 *    complex state interactions via master.
+	 *
+	 * So this doesn't seem likely to change anytime soon.
+	 *
 	 * ----
 	 */
 	if (RecoveryInProgress())
@@ -253,7 +256,7 @@ CreateInitDecodingContext(char *plugin,
 	/*
 	 * The replication slot mechanism is used to prevent removal of required
 	 * WAL. As there is no interlock between this and checkpoints required WAL
-	 * could be removed before ReplicationSlotsComputeRequiredLSN() has been
+	 * could be removed before ReplicationSlotsUpdateRequiredLSN() has been
 	 * called to prevent that. In the very unlikely case that this happens
 	 * we'll just retry.
 	 */
@@ -282,12 +285,12 @@ CreateInitDecodingContext(char *plugin,
 			slot->data.restart_lsn = GetRedoRecPtr();
 
 		/* prevent WAL removal as fast as possible */
-		ReplicationSlotsComputeRequiredLSN();
+		ReplicationSlotsUpdateRequiredLSN();
 
 		/*
 		 * If all required WAL is still there, great, otherwise retry. The
 		 * slot should prevent further removal of WAL, unless there's a
-		 * concurrent ReplicationSlotsComputeRequiredLSN() after we've written
+		 * concurrent ReplicationSlotsUpdateRequiredLSN() after we've written
 		 * the new restart_lsn above, so normally we should never need to loop
 		 * more than twice.
 		 */
@@ -317,7 +320,7 @@ CreateInitDecodingContext(char *plugin,
 	slot->effective_catalog_xmin = GetOldestSafeDecodingTransactionId();
 	slot->data.catalog_xmin = slot->effective_catalog_xmin;
 
-	ReplicationSlotsComputeRequiredXmin(true);
+	ReplicationSlotsUpdateRequiredXmin(true);
 
 	LWLockRelease(ProcArrayLock);
 
@@ -482,6 +485,7 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 	}
 
 	ctx->slot->data.confirmed_flush = ctx->reader->EndRecPtr;
+	ReplicationSlotMarkDirty();
 }
 
 /*
@@ -892,13 +896,18 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 	{
 		bool		updated_xmin = false;
 		bool		updated_restart = false;
+		bool		updated_confirm = false;
 
 		/* use volatile pointer to prevent code rearrangement */
 		volatile ReplicationSlot *slot = MyReplicationSlot;
 
 		SpinLockAcquire(&slot->mutex);
 
-		slot->data.confirmed_flush = lsn;
+		if (slot->data.confirmed_flush != lsn)
+		{
+			slot->data.confirmed_flush = lsn;
+			updated_confirm = true;
+		}
 
 		/* if were past the location required for bumping xmin, do so */
 		if (slot->candidate_xmin_lsn != InvalidXLogRecPtr &&
@@ -936,36 +945,51 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 
 		SpinLockRelease(&slot->mutex);
 
-		/* first write new xmin to disk, so we know whats up after a crash */
-		if (updated_xmin || updated_restart)
+		if (updated_xmin || updated_restart || updated_confirm)
 		{
 			ReplicationSlotMarkDirty();
-			ReplicationSlotSave();
-			elog(DEBUG1, "updated xmin: %u restart: %u", updated_xmin, updated_restart);
-		}
 
-		/*
-		 * Now the new xmin is safely on disk, we can let the global value
-		 * advance. We do not take ProcArrayLock or similar since we only
-		 * advance xmin here and there's not much harm done by a concurrent
-		 * computation missing that.
-		 */
-		if (updated_xmin)
-		{
-			SpinLockAcquire(&slot->mutex);
-			slot->effective_catalog_xmin = slot->data.catalog_xmin;
-			SpinLockRelease(&slot->mutex);
+			/*
+			 * first write new xmin to disk, so we know whats up
+			 * after a crash.
+			 */
+			if (updated_xmin || updated_restart)
+			{
+				ReplicationSlotSave();
+				elog(DEBUG1, "updated xmin: %u restart: %u", updated_xmin, updated_restart);
+			}
 
-			ReplicationSlotsComputeRequiredXmin(false);
-			ReplicationSlotsComputeRequiredLSN();
+			/*
+			 * Now the new xmin is safely on disk, we can let the global value
+			 * advance. We do not take ProcArrayLock or similar since we only
+			 * advance xmin here and there's not much harm done by a concurrent
+			 * computation missing that.
+			 */
+			if (updated_xmin)
+			{
+				SpinLockAcquire(&slot->mutex);
+				slot->effective_catalog_xmin = slot->data.catalog_xmin;
+				SpinLockRelease(&slot->mutex);
+
+				ReplicationSlotsUpdateRequiredXmin(false);
+				ReplicationSlotsUpdateRequiredLSN();
+			}
 		}
 	}
 	else
 	{
 		volatile ReplicationSlot *slot = MyReplicationSlot;
+		bool dirtied = false;
 
 		SpinLockAcquire(&slot->mutex);
-		slot->data.confirmed_flush = lsn;
+		if (slot->data.confirmed_flush != lsn)
+		{
+			slot->data.confirmed_flush = lsn;
+			dirtied = true;
+		}
 		SpinLockRelease(&slot->mutex);
+
+		if (dirtied)
+			ReplicationSlotMarkDirty();
 	}
 }
