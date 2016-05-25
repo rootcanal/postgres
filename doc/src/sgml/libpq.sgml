@@ -4622,7 +4622,7 @@ int PQflush(PGconn *conn);
    </para>
 
    <para>
-    Batching less useful when information from one operation is required by the
+    Batching is less useful when information from one operation is required by the
     client before it knows enough to send the next operation. The client must
     introduce a synchronisation point and wait for a full client/server
     round-trip to get the results it needs. However, it's often possible to
