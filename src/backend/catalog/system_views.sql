@@ -705,7 +705,6 @@ CREATE VIEW pg_replication_slots AS
             D.datname AS database,
             L.active,
             L.active_pid,
-            L.failover,
             L.xmin,
             L.catalog_xmin,
             L.restart_lsn,
@@ -970,15 +969,14 @@ AS 'pg_logical_slot_peek_binary_changes';
 
 CREATE OR REPLACE FUNCTION pg_create_physical_replication_slot(
     IN slot_name name, IN immediately_reserve boolean DEFAULT false,
-    IN failover boolean DEFAULT false, OUT slot_name name,
-    OUT xlog_position pg_lsn)
+    OUT slot_name name, OUT xlog_position pg_lsn)
 RETURNS RECORD
 LANGUAGE INTERNAL
 STRICT VOLATILE
 AS 'pg_create_physical_replication_slot';
 
 CREATE OR REPLACE FUNCTION pg_create_logical_replication_slot(
-    IN slot_name name, IN plugin name, IN failover boolean DEFAULT false,
+    IN slot_name name, IN plugin name,
     OUT slot_name text, OUT xlog_position pg_lsn)
 RETURNS RECORD
 LANGUAGE INTERNAL

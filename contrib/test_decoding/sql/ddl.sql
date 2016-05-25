@@ -4,8 +4,6 @@ SET synchronous_commit = on;
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
 -- fail because of an already existing slot
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
--- fail because a failover slot can't replace a normal slot on the master
-SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding', true);
 -- fail because of an invalid name
 SELECT 'init' FROM pg_create_logical_replication_slot('Invalid Name', 'test_decoding');
 
@@ -24,26 +22,15 @@ SELECT 'init' FROM pg_create_physical_replication_slot('repl');
 SELECT data FROM pg_logical_slot_get_changes('repl', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
 SELECT pg_drop_replication_slot('repl');
 
+
 SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
 
 /* check whether status function reports us, only reproduceable columns */
 SELECT slot_name, plugin, slot_type, active,
     NOT catalog_xmin IS NULL AS catalog_xmin_set,
     xmin IS NULl  AS data_xmin_not_set,
-    pg_xlog_location_diff(restart_lsn, '0/01000000') > 0 AS some_wal,
-    failover
+    pg_xlog_location_diff(restart_lsn, '0/01000000') > 0 AS some_wal
 FROM pg_replication_slots;
-
-/* same for a failover slot */
-SELECT 'init' FROM pg_create_logical_replication_slot('failover_slot', 'test_decoding', true);
-SELECT slot_name, plugin, slot_type, active,
-    NOT catalog_xmin IS NULL AS catalog_xmin_set,
-    xmin IS NULl  AS data_xmin_not_set,
-    pg_xlog_location_diff(restart_lsn, '0/01000000') > 0 AS some_wal,
-    failover
-FROM pg_replication_slots
-WHERE slot_name = 'failover_slot';
-SELECT pg_drop_replication_slot('failover_slot');
 
 /*
  * Check that changes are handled correctly when interleaved with ddl

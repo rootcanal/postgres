@@ -42,7 +42,7 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
 	bool 		immediately_reserve = PG_GETARG_BOOL(1);
-	bool		failover = PG_GETARG_BOOL(2);
+	bool		failover = false;
 	Datum		values[2];
 	bool		nulls[2];
 	TupleDesc	tupdesc;
@@ -50,6 +50,14 @@ pg_create_physical_replication_slot(PG_FUNCTION_ARGS)
 	Datum		result;
 
 	Assert(!MyReplicationSlot);
+
+	/*
+	 * This function can be called with the standard signature
+	 * in pg_proc, or with the new signature from the failover
+	 * slots extension. It must cope with either.
+	 */
+	if (PG_NARGS() == 3)
+		failover = PG_GETARG_BOOL(2);
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
@@ -98,7 +106,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 {
 	Name		name = PG_GETARG_NAME(0);
 	Name		plugin = PG_GETARG_NAME(1);
-	bool		failover = PG_GETARG_BOOL(2);
+	bool		failover = false;
 
 	LogicalDecodingContext *ctx = NULL;
 
@@ -109,6 +117,14 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	bool		nulls[2];
 
 	Assert(!MyReplicationSlot);
+
+	/*
+	 * This function can be called with the standard signature
+	 * in pg_proc, or with the new signature from the failover
+	 * slots extension. It must cope with either.
+	 */
+	if (PG_NARGS() == 3)
+		failover = PG_GETARG_BOOL(2);
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
@@ -177,7 +193,7 @@ pg_drop_replication_slot(PG_FUNCTION_ARGS)
 Datum
 pg_get_replication_slots(PG_FUNCTION_ARGS)
 {
-#define PG_GET_REPLICATION_SLOTS_COLS 11
+#define PG_GET_REPLICATION_SLOTS_COLS 12
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
@@ -281,8 +297,6 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		else
 			nulls[i++] = true;
 
-		values[i++] = BoolGetDatum(failover);
-
 		if (xmin != InvalidTransactionId)
 			values[i++] = TransactionIdGetDatum(xmin);
 		else
@@ -302,6 +316,19 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 			values[i++] = LSNGetDatum(confirmed_flush_lsn);
 		else
 			nulls[i++] = true;
+
+		/*
+		 * This function can be called with the standard signature in
+		 * pg_proc, in which case it's not expecting an extra
+		 * 'failover' column, or with the new signature from our
+		 * extension where there's room.  We can tell between the two
+		 * cases using the expected tupledesc but we don't actually
+		 * need to - it's harmless to allocate an extra space in the
+		 * resultset array and populate it. It'll just get ignored if
+		 * it isn't expected, but this means that the failover field
+		 * must be last in the result.
+		 */
+		values[i++] = BoolGetDatum(failover);
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 	}

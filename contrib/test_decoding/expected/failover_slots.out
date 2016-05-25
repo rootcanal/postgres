@@ -1,0 +1,161 @@
+CREATE EXTENSION failover_slots;
+CREATE VIEW public.stable_replslots_cols AS
+SELECT slot_name, plugin, slot_type, "database", active, failover
+FROM pg_catalog.pg_replication_slots_failover()
+ORDER BY slot_name;
+SELECT * FROM stable_replslots_cols;
+ slot_name | plugin | slot_type | database | active | failover 
+-----------+--------+-----------+----------+--------+----------
+(0 rows)
+
+SELECT slot_name FROM pg_create_logical_replication_slot('default', 'test_decoding');
+ slot_name 
+-----------
+ default
+(1 row)
+
+SELECT slot_name FROM pg_create_logical_replication_slot('nonfailover', 'test_decoding', false);
+  slot_name  
+-------------
+ nonfailover
+(1 row)
+
+SELECT slot_name FROM pg_create_logical_replication_slot('failover', 'test_decoding', true);
+ slot_name 
+-----------
+ failover
+(1 row)
+
+SELECT slot_name FROM pg_create_physical_replication_slot('default_p');
+ slot_name 
+-----------
+ default_p
+(1 row)
+
+SELECT slot_name FROM pg_create_physical_replication_slot('nonfailover_p', false, false);
+   slot_name   
+---------------
+ nonfailover_p
+(1 row)
+
+SELECT slot_name FROM pg_create_physical_replication_slot('failover_p', false,  true);
+ slot_name  
+------------
+ failover_p
+(1 row)
+
+SELECT * FROM stable_replslots_cols;
+   slot_name   |    plugin     | slot_type |  database  | active | failover 
+---------------+---------------+-----------+------------+--------+----------
+ default       | test_decoding | logical   | regression | f      | f
+ default_p     |               | physical  |            | f      | f
+ failover      | test_decoding | logical   | regression | f      | t
+ failover_p    |               | physical  |            | f      | t
+ nonfailover   | test_decoding | logical   | regression | f      | f
+ nonfailover_p |               | physical  |            | f      | f
+(6 rows)
+
+CREATE TABLE some_table(
+	id serial primary key,
+	dummy integer
+);
+INSERT INTO some_table(dummy)
+SELECT x
+FROM generate_series(1,10) x;
+SELECT data FROM pg_logical_slot_get_changes('failover', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
+                               data                                
+-------------------------------------------------------------------
+ BEGIN
+ table public.some_table: INSERT: id[integer]:1 dummy[integer]:1
+ table public.some_table: INSERT: id[integer]:2 dummy[integer]:2
+ table public.some_table: INSERT: id[integer]:3 dummy[integer]:3
+ table public.some_table: INSERT: id[integer]:4 dummy[integer]:4
+ table public.some_table: INSERT: id[integer]:5 dummy[integer]:5
+ table public.some_table: INSERT: id[integer]:6 dummy[integer]:6
+ table public.some_table: INSERT: id[integer]:7 dummy[integer]:7
+ table public.some_table: INSERT: id[integer]:8 dummy[integer]:8
+ table public.some_table: INSERT: id[integer]:9 dummy[integer]:9
+ table public.some_table: INSERT: id[integer]:10 dummy[integer]:10
+ COMMIT
+(12 rows)
+
+SELECT * FROM stable_replslots_cols;
+   slot_name   |    plugin     | slot_type |  database  | active | failover 
+---------------+---------------+-----------+------------+--------+----------
+ default       | test_decoding | logical   | regression | f      | f
+ default_p     |               | physical  |            | f      | f
+ failover      | test_decoding | logical   | regression | f      | t
+ failover_p    |               | physical  |            | f      | t
+ nonfailover   | test_decoding | logical   | regression | f      | f
+ nonfailover_p |               | physical  |            | f      | f
+(6 rows)
+
+SELECT data FROM pg_logical_slot_get_changes('nonfailover', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
+                               data                                
+-------------------------------------------------------------------
+ BEGIN
+ table public.some_table: INSERT: id[integer]:1 dummy[integer]:1
+ table public.some_table: INSERT: id[integer]:2 dummy[integer]:2
+ table public.some_table: INSERT: id[integer]:3 dummy[integer]:3
+ table public.some_table: INSERT: id[integer]:4 dummy[integer]:4
+ table public.some_table: INSERT: id[integer]:5 dummy[integer]:5
+ table public.some_table: INSERT: id[integer]:6 dummy[integer]:6
+ table public.some_table: INSERT: id[integer]:7 dummy[integer]:7
+ table public.some_table: INSERT: id[integer]:8 dummy[integer]:8
+ table public.some_table: INSERT: id[integer]:9 dummy[integer]:9
+ table public.some_table: INSERT: id[integer]:10 dummy[integer]:10
+ COMMIT
+(12 rows)
+
+SELECT * FROM stable_replslots_cols;
+   slot_name   |    plugin     | slot_type |  database  | active | failover 
+---------------+---------------+-----------+------------+--------+----------
+ default       | test_decoding | logical   | regression | f      | f
+ default_p     |               | physical  |            | f      | f
+ failover      | test_decoding | logical   | regression | f      | t
+ failover_p    |               | physical  |            | f      | t
+ nonfailover   | test_decoding | logical   | regression | f      | f
+ nonfailover_p |               | physical  |            | f      | f
+(6 rows)
+
+SELECT pg_drop_replication_slot('default');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('default_p');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('nonfailover');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('nonfailover_p');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('failover');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT pg_drop_replication_slot('failover_p');
+ pg_drop_replication_slot 
+--------------------------
+ 
+(1 row)
+
+SELECT * FROM stable_replslots_cols;
+ slot_name | plugin | slot_type | database | active | failover 
+-----------+--------+-----------+----------+--------+----------
+(0 rows)
+
