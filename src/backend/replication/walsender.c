@@ -1533,6 +1533,11 @@ PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 	 * be energy wasted - the worst lost information can do here is give us
 	 * wrong information in a statistics view - we'll just potentially be more
 	 * conservative in removing files.
+	 *
+	 * We don't have to do any effective_xmin / effective_catalog_xmin testing
+	 * here either, like for LogicalConfirmReceivedLocation. If we received
+	 * the xmin and catalog_xmin from downstream replication slots we know they
+	 * were already confirmed there,
 	 */
 }
 
@@ -1595,7 +1600,7 @@ ProcessStandbyReplyMessage(void)
 
 /* compute new replication slot xmin horizon if needed */
 static void
-PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin)
+PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin, TransactionId feedbackCatalogXmin)
 {
 	bool		changed = false;
 	ReplicationSlot *slot = MyReplicationSlot;
@@ -1607,6 +1612,12 @@ PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin)
 	 * For physical replication we don't need the interlock provided by xmin
 	 * and effective_xmin since the consequences of a missed increase are
 	 * limited to query cancellations, so set both at once.
+	 *
+	 * If the physical slot is relaying catalog_xmin for logical repliation
+	 * slots on the replica it's safe to act on the new catalog_xmin
+	 * immediately too. The replica will only send a new catalog_xmin via
+	 * feedback when it advances its effective_catalog_xmin, so it's done
+	 * the delay-until-confirmed dance for us.
 	 */
 	if (!TransactionIdIsNormal(slot->data.xmin) ||
 		!TransactionIdIsNormal(feedbackXmin) ||
@@ -1614,7 +1625,17 @@ PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin)
 	{
 		changed = true;
 		slot->data.xmin = feedbackXmin;
+		slot->data.catalog_xmin = feedbackCatalogXmin;
 		slot->effective_xmin = feedbackXmin;
+		slot->effective_catalog_xmin = feedbackCatalogXmin;
+	}
+	if (!TransactionIdIsNormal(slot->data.catalog_xmin) ||
+		!TransactionIdIsNormal(feedbackCatalogXmin) ||
+		TransactionIdPrecedes(slot->data.catalog_xmin, feedbackCatalogXmin))
+	{
+		changed = true;
+		slot->data.catalog_xmin = feedbackCatalogXmin;
+		slot->effective_catalog_xmin = feedbackCatalogXmin;
 	}
 	SpinLockRelease(&slot->mutex);
 
@@ -1631,10 +1652,10 @@ PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin)
 static void
 ProcessStandbyHSFeedbackMessage(void)
 {
-	TransactionId nextXid;
-	uint32		nextEpoch;
 	TransactionId feedbackXmin;
 	uint32		feedbackEpoch;
+	TransactionId feedbackCatalogXmin = InvalidTransactionId;
+	uint32		feedbackCatalogEpoch = 0;
 
 	/*
 	 * Decipher the reply message. The caller already consumed the msgtype
@@ -1643,42 +1664,69 @@ ProcessStandbyHSFeedbackMessage(void)
 	(void) pq_getmsgint64(&reply_message);		/* sendTime; not used ATM */
 	feedbackXmin = pq_getmsgint(&reply_message, 4);
 	feedbackEpoch = pq_getmsgint(&reply_message, 4);
+	if (reply_message.cursor != reply_message.len)
+	{
+		/*
+		 * Extra data on the end of the message must be a catalog xmin
+		 * and associated epoch, which is appended by a 10.0+ standby's
+		 * walreceiver to pass the lowest catalog xmin of any replication slot
+		 * up to the master.
+		 *
+		 * We can't assume the new field is always present since we might be
+		 * getting a physical replication connection from a pg_receivexlog or
+		 * some other client that doesn't know about the new message field.
+		 *
+		 * To allow some future field to be appended to the message after this
+		 * one we allow it to be present for logical slot connections too, just
+		 * forced to zero.
+		 *
+		 * The catalog xmin supplied here is the least across all slots on all
+		 * databases in the downstream, so we'll block vacuum of possibly
+		 * unnecessary tuples on DBs the downstream doesn't need. We don't do
+		 * database-specific slot catalog_xmin checking in vacuum on the
+		 * upstream at the moment either, so it's actually no worse than if the
+		 * same logical slots were on the upstream.
+		 */
+		feedbackCatalogXmin = pq_getmsgint(&reply_message, 4);
+		feedbackCatalogEpoch = pq_getmsgint(&reply_message, 4);
+		if (TransactionIdIsNormal(feedbackCatalogXmin) && !SlotIsPhysical(MyReplicationSlot))
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg_internal("cannot set a logical slot's catalog_xmin directly via hot_standby_feedback message")));
+		}
+	}
 
-	elog(DEBUG2, "hot standby feedback xmin %u epoch %u",
+	elog(DEBUG2, "hot standby feedback xmin %u catalog_xmin %u epoch %u",
 		 feedbackXmin,
+		 feedbackCatalogXmin,
 		 feedbackEpoch);
 
 	/* Unset WalSender's xmin if the feedback message value is invalid */
-	if (!TransactionIdIsNormal(feedbackXmin))
+	if (!TransactionIdIsNormal(feedbackXmin)
+		&& !TransactionIdIsNormal(feedbackCatalogXmin))
 	{
 		MyPgXact->xmin = InvalidTransactionId;
 		if (MyReplicationSlot != NULL)
-			PhysicalReplicationSlotNewXmin(feedbackXmin);
+			PhysicalReplicationSlotNewXmin(feedbackXmin, feedbackCatalogXmin);
 		return;
 	}
 
 	/*
 	 * Check that the provided xmin/epoch are sane, that is, not in the future
 	 * and not so far back as to be already wrapped around.  Ignore if not.
-	 *
-	 * Epoch of nextXid should be same as standby, or if the counter has
-	 * wrapped, then one greater than standby.
 	 */
-	GetNextXidAndEpoch(&nextXid, &nextEpoch);
-
-	if (feedbackXmin <= nextXid)
+	if (TransactionIdIsNormal(feedbackXmin) &&
+		!TransactionIdInRecentPast(feedbackXmin, feedbackEpoch))
 	{
-		if (feedbackEpoch != nextEpoch)
-			return;
-	}
-	else
-	{
-		if (feedbackEpoch + 1 != nextEpoch)
-			return;
+		return;
 	}
 
-	if (!TransactionIdPrecedesOrEquals(feedbackXmin, nextXid))
-		return;					/* epoch OK, but it's wrapped around */
+	if (TransactionIdIsNormal(feedbackCatalogXmin) &&
+		!TransactionIdInRecentPast(feedbackCatalogXmin, feedbackCatalogEpoch))
+	{
+		return;
+	}
 
 	/*
 	 * Set the WalSender's xmin equal to the standby's requested xmin, so that
@@ -1703,15 +1751,29 @@ ProcessStandbyHSFeedbackMessage(void)
 	 * already since a VACUUM could have just finished calling GetOldestXmin.)
 	 *
 	 * If we're using a replication slot we reserve the xmin via that,
-	 * otherwise via the walsender's PGXACT entry.
+	 * otherwise via the walsender's PGXACT entry. We can only track the
+	 * catalog xmin separately when using a slot, so we store the least
+	 * of the two provided when not using a slot.
 	 *
 	 * XXX: It might make sense to generalize the ephemeral slot concept and
 	 * always use the slot mechanism to handle the feedback xmin.
 	 */
 	if (MyReplicationSlot != NULL)		/* XXX: persistency configurable? */
-		PhysicalReplicationSlotNewXmin(feedbackXmin);
+	{
+		PhysicalReplicationSlotNewXmin(feedbackXmin, feedbackCatalogXmin);
+	}
 	else
-		MyPgXact->xmin = feedbackXmin;
+	{
+		if (TransactionIdIsNormal(feedbackCatalogXmin)
+			&& TransactionIdPrecedesOrEquals(feedbackCatalogXmin, feedbackXmin))
+		{
+			MyPgXact->xmin = feedbackCatalogXmin;
+		}
+		else
+		{
+			MyPgXact->xmin = feedbackXmin;
+		}
+	}
 }
 
 /*

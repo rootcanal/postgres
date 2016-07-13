@@ -59,11 +59,24 @@ typedef struct ReplicationSlotPersistentData
 	 * xmin horizon for catalog tuples
 	 *
 	 * NB: This may represent a value that hasn't been written to disk yet;
-	 * see notes for effective_xmin, below.
+	 * see notes for effective_catalog_xmin, below.
 	 */
 	TransactionId catalog_xmin;
 
-	/* oldest LSN that might be required by this replication slot */
+	/*
+	 * oldest LSN that might be required by this replication slot
+	 *
+	 * For logical slots this is the location of the most recent
+	 * xl_running_xacts record prior to the start of the oldest xact still
+	 * in-progress as of the confirmed_flush lsn. We must resume decoding at
+	 * this point to ensure we see every change made by every xact that we
+	 * might have to replay to the client.
+	 *
+	 * For physical slots this is the confirmed flush pointer from
+	 * the most recent standby reply message.
+	 *
+	 * WAL older than restart_lsn may not be removed.
+	 */
 	XLogRecPtr	restart_lsn;
 
 	/*
@@ -71,6 +84,14 @@ typedef struct ReplicationSlotPersistentData
 	 * start_lsn point in case the client doesn't specify one, and also as a
 	 * safety measure to jump forwards in case the client specifies a
 	 * start_lsn that's further in the past than this value.
+	 *
+	 * We may skip past the client's requested start point to our
+	 * confirmed_flush point when the client previously sent us feedback
+	 * in response to keepalives, empty transactions that caused no
+	 * client-side writes and no replication identifier update, then
+	 * crashed. On reconnect the client won't know it's further ahead than
+	 * it remembers, but we know it won't need this data to be processed
+	 * since it didn't do anything with it the first time.
 	 */
 	XLogRecPtr	confirmed_flush;
 
@@ -104,8 +125,9 @@ typedef struct ReplicationSlot
 	 * too soon, but the worst consequence we might encounter there is
 	 * unwanted query cancellations on the standby.  Thus, for logical
 	 * decoding, this value represents the latest xmin that has actually been
-	 * written to disk, whereas for streaming replication, it's just the same
-	 * as the persistent value (data.xmin).
+	 * written to disk and can be safely used by vacuum, etc, whereas for
+	 * streaming replication it's just the same as the persistent value
+	 * (data.xmin).
 	 */
 	TransactionId effective_xmin;
 	TransactionId effective_catalog_xmin;

@@ -88,16 +88,28 @@ CheckLogicalDecodingRequirements(void)
 				 errmsg("logical decoding requires a database connection")));
 
 	/* ----
-	 * TODO: We got to change that someday soon...
+	 * To allow logical decoding on a standby we must ensure that:
 	 *
-	 * There's basically three things missing to allow this:
 	 * 1) We need to be able to correctly and quickly identify the timeline a
-	 *	  LSN belongs to
+	 *	  LSN belongs to so we can follow timeline switches
+	 *
 	 * 2) We need to force hot_standby_feedback to be enabled at all times so
 	 *	  the primary cannot remove rows we need.
-	 * 3) support dropping replication slots referring to a database, in
+	 *
+	 * 3) ensure a replication slot is used to connect to the upstream so
+	 *    we know the catalog_xmin is persistent even over connection loss.
+	 *
+	 * 4) support dropping replication slots referring to a database, in
 	 *	  dbase_redo. There can't be any active ones due to HS recovery
 	 *	  conflicts, so that should be relatively easy.
+	 *
+	 * This means we can't allow logical decoding from a standby that's only
+	 * configured for archive recovery. It would be OK to run temporarily in
+	 * archive recovery during connectivity drops so long as we have a slot
+	 * with a catalog_xmin set; it'd cause extra bloat on the master until we
+	 * can reconnect, but that's unavoidable. We don't currently have any
+	 * book-keeping about whether we have a slot unless it's in active use,
+	 * though, so we have to assume there's no slot.
 	 * ----
 	 */
 	if (RecoveryInProgress())

@@ -1161,8 +1161,8 @@ XLogWalRcvSendHSFeedback(bool immed)
 {
 	TimestampTz now;
 	TransactionId nextXid;
-	uint32		nextEpoch;
-	TransactionId xmin;
+	uint32		nextEpoch, xmin_epoch, catalog_xmin_epoch, slot_xmin;
+	TransactionId xmin, catalog_xmin;
 	static TimestampTz sendTime = 0;
 	static bool master_has_standby_xmin = false;
 
@@ -1203,29 +1203,66 @@ XLogWalRcvSendHSFeedback(bool immed)
 	 * everything else has been checked.
 	 */
 	if (hot_standby_feedback)
-		xmin = GetOldestXmin(NULL, false);
+	{
+		/*
+		 * Usually GetOldestXmin() would include the catalog_xmin in its
+		 * calculations, but we don't want to hold upstream back from vacuuming
+		 * normal user table tuples just because they're within the
+		 * catalog_xmin horizon of logical replication slots on this standby.
+		 * Instead we report the catalog_xmin to the upstream separately.
+		 *
+		 * By doing the lookup separatelt we might produce an xmin and catalog
+		 * xmin slightly later than what was in the procarray at the time we
+		 * examined the it for session state, since it can be advanced in-between.
+		 * That's harmless though, since it's only for confirmed slot updates.
+		 *
+		 * (XXX-REVIEW-ATTENTION)
+		 * The alternative here is to extend GetOldestXmin() to take an
+		 * out-param to report the slot catalog xmin. That really just
+		 * duplicates ProcArrayGetReplicationSlotXmin but means we can grab it
+		 * within a single ProcArray lock. A variant of GetOldestXmin that
+		 * takes an already-locked flag would work too, but hold the lock
+		 * across parts of GetOldestXmin() that currently don't retain it.
+		 * (XXX-REVIEW-ATTENTION)
+		 */
+		xmin = GetOldestXmin(NULL, false, true);
+		ProcArrayGetReplicationSlotXmin(&slot_xmin, &catalog_xmin);
+
+		if (TransactionIdIsValid(slot_xmin) &&
+			NormalTransactionIdPrecedes(slot_xmin, xmin))
+			xmin = slot_xmin;
+	}
 	else
+	{
 		xmin = InvalidTransactionId;
+		catalog_xmin = InvalidTransactionId;
+	}
 
 	/*
 	 * Get epoch and adjust if nextXid and oldestXmin are different sides of
 	 * the epoch boundary.
 	 */
 	GetNextXidAndEpoch(&nextXid, &nextEpoch);
+	xmin_epoch = nextEpoch;
 	if (nextXid < xmin)
-		nextEpoch--;
+		xmin_epoch --;
+	catalog_xmin_epoch = nextEpoch;
+	if (nextXid < catalog_xmin)
+		catalog_xmin_epoch --;
 
-	elog(DEBUG2, "sending hot standby feedback xmin %u epoch %u",
-		 xmin, nextEpoch);
+	elog(DEBUG2, "sending hot standby feedback xmin %u epoch %u catalog_xmin %u catalog_xmin_epoch %u",
+		 xmin, xmin_epoch, catalog_xmin, catalog_xmin_epoch);
 
 	/* Construct the message and send it. */
 	resetStringInfo(&reply_message);
 	pq_sendbyte(&reply_message, 'h');
 	pq_sendint64(&reply_message, GetCurrentIntegerTimestamp());
 	pq_sendint(&reply_message, xmin, 4);
-	pq_sendint(&reply_message, nextEpoch, 4);
+	pq_sendint(&reply_message, xmin_epoch, 4);
+	pq_sendint(&reply_message, catalog_xmin, 4);
+	pq_sendint(&reply_message, catalog_xmin_epoch, 4);
 	walrcv_send(reply_message.data, reply_message.len);
-	if (TransactionIdIsValid(xmin))
+	if (TransactionIdIsValid(xmin) || TransactionIdIsValid(catalog_xmin))
 		master_has_standby_xmin = true;
 	else
 		master_has_standby_xmin = false;
